@@ -4,18 +4,20 @@ from datetime import datetime
 
 st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛", layout="wide")
 
+# BURAYA GOOGLE E-TABLO LINKINIZI YAPIŞTIRIN:
+# Linkin sonundaki /edit... kısmını silip /export?format=csv ekliyoruz
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1nzBlypm7zDG7o2UE_35VrKVZvZzmFSbo5ua4b4eEYq0/edit?usp=sharing"
+
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
-    """Şifre kontrol ekranı"""
     def password_entered():
-        if st.session_state["password"] == "1234":  # Buradaki "1234" yerine istediğiniz şifreyi yazabilirsiniz!
+        if st.session_state["password"] == "1234":  # İstediğiniz şifreyi buraya yazabilirsiniz
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Şifreyi hafızadan sil
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # İlk açılışta şifre kutusunu göster
         st.subheader("🔒 Lütfen Giriş Şifresini Girin")
         st.text_input("Şifre", type="password", on_change=password_entered, key="password")
         return False
@@ -27,24 +29,23 @@ def check_password():
         return True
 
 if not check_password():
-    st.stop()  # Şifre doğru girilene kadar uygulamanın geri kalanını çalıştırma
+    st.stop()
 
-# --- UYGULAMA KODLARI ---
-EXCEL_FILE = "Akalın İş Takip.xlsx"
-
+# --- GOOGLE E-TABLODAN VERİ OKUMA ---
+@st.cache_data(ttl=5) # 5 saniyede bir veriyi tazeler
 def load_data():
     try:
-        df = pd.read_excel(EXCEL_FILE, sheet_name='İşler')
+        df = pd.read_csv(SPREADSHEET_URL)
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception as e:
-        st.error(f"Dosya yüklenirken hata oluştu: {e}")
+        st.error(f"Google E-Tablo'dan veri okunamadı: {e}")
         return pd.DataFrame(columns=['Müşteri', 'Marka/Model', 'Plaka', 'Yapılan İşlem', 'Ücret', 'Alınan', 'Kalan', 'Tarih', 'İş Tipi'])
 
 df = load_data()
 
 st.sidebar.title("🚛 Akalın Servis")
-menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "➕ Yeni İş Ekle", "💰 Müşteri Borçları"])
+menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "💰 Müşteri Borçları"])
 
 if menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
@@ -75,43 +76,9 @@ elif menu == "📋 İş Listesi & Arama":
         
     st.dataframe(filtered_df, use_container_width=True)
 
-elif menu == "➕ Yeni İş Ekle":
-    st.title("➕ Yeni Araç / İş Ekle")
-    
-    with st.form("yeni_is_formu"):
-        col1, col2 = st.columns(2)
-        with col1:
-            musteri = st.text_input("Müşteri Adı / Firma")
-            marka = st.text_input("Marka / Model")
-            plaka = st.text_input("Plaka")
-            is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
-        with col2:
-            tarih = st.date_input("İş Tarihi", datetime.now())
-            ucret = st.number_input("Toplam Ücret (₺)", min_value=0.0, step=100.0)
-            alinan = st.number_input("Alınan Ödenen (₺)", min_value=0.0, step=100.0)
-            yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça")
-            
-        submit = st.form_submit_button("Kaydet")
-        
-        if submit:
-            kalan = ucret - alinan
-            yeni_kayit = {
-                'Müşteri': musteri,
-                'Marka/Model': marka,
-                'Plaka': plaka,
-                'Yapılan İşlem': yapilan_islem,
-                'Ücret': ucret,
-                'Alınan': alinan,
-                'Kalan': kalan,
-                'Tarih': pd.to_datetime(tarih),
-                'İş Tipi': is_tipi
-            }
-            df = pd.concat([df, pd.DataFrame([yeni_kayit])], ignore_index=True)
-            df.to_excel(EXCEL_FILE, sheet_name='İşler', index=False)
-            st.success("İş kaydedildi!")
-
 elif menu == "💰 Müşteri Borçları":
     st.title("💰 Müşteri Borç Listesi")
-    borc_df = df.groupby('Müşteri')[['Ücret', 'Alınan', 'Kalan']].sum().reset_index()
-    borc_df = borc_df[borc_df['Kalan'] > 0].sort_values(by='Kalan', ascending=False)
-    st.dataframe(borc_df, use_container_width=True)
+    if 'Müşteri' in df.columns and 'Kalan' in df.columns:
+        borc_df = df.groupby('Müşteri')[['Ücret', 'Alınan', 'Kalan']].sum().reset_index()
+        borc_df = borc_df[borc_df['Kalan'] > 0].sort_values(by='Kalan', ascending=False)
+        st.dataframe(borc_df, use_container_width=True)
