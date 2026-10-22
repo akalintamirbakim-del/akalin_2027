@@ -106,6 +106,50 @@ elif menu == "📋 İş Listesi & Arama":
         filtered_df = df[mask]
         
     st.dataframe(filtered_df, use_container_width=True)
+    
+    # --- KAYIT / SATIR SİLME BÖLÜMÜ ---
+    if not df.empty:
+        st.markdown("---")
+        st.subheader("🗑️ Kayıt / Satır Sil")
+        
+        silme_secenekleri = []
+        secenek_map = {}
+        
+        for idx, row in df.iterrows():
+            tarih_val = str(row.get('Tarih', ''))
+            plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
+            musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
+            islem_val = str(row.get('Yapılan İşlem', ''))
+            
+            label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val} | İşlem: {islem_val[:30]}"
+            silme_secenekleri.append(label)
+            secenek_map[label] = idx
+        
+        secilen_silme = st.selectbox("Silmek istediğiniz kaydı seçin:", ["-- Seçiniz --"] + silme_secenekleri)
+        
+        if secilen_silme != "-- Seçiniz --":
+            if st.button("Seçilen Kaydı Kalıcı Olarak Sil", type="primary"):
+                gercek_idx = secenek_map[secilen_silme]
+                # Google Sheets'te başlık 1. satır olduğu için veri satırı index + 2'dir.
+                sheets_row_index = gercek_idx + 2
+                
+                payload = {
+                    "token": st.secrets["API_TOKEN"],
+                    "action": "delete",
+                    "rowIndex": sheets_row_index
+                }
+                
+                try:
+                    response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                    res_data = response.json()
+                    if res_data.get("status") == "success":
+                        st.success("Kayıt başarıyla silindi ve tablo güncellendi!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                except Exception as e:
+                    st.error(f"Bağlantı hatası oluştu: {e}")
 
 elif menu == "➕ Yeni İş Ekle":
     st.title("➕ Yeni Araç / İş Ekle")
@@ -171,7 +215,7 @@ elif menu == "➕ Yeni İş Ekle":
                 if res_data.get("status") == "success":
                     st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
                     st.cache_data.clear()
-                    st.rerun()  # <--- BURASI EKLENDİ: Kayıttan hemen sonra sayfayı yeniler
+                    st.rerun()
                 else:
                     st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
             except Exception as e:
