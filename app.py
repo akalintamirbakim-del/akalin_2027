@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+import requests
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
@@ -28,7 +29,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- GOOGLE E-TABLO BAĞLANTISI ---
+# --- GOOGLE E-TABLO BAĞLANTISI (OKUMA) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
@@ -109,14 +110,11 @@ elif menu == "📋 İş Listesi & Arama":
 elif menu == "➕ Yeni İş Ekle":
     st.title("➕ Yeni Araç / İş Ekle")
     
-    # --- OTOMATİK TAMAMLAMA VERİ SETİ (KAYITLI MÜŞTERİ / ARAÇLAR) ---
     known_records = []
     if not df.empty and c_musteri and c_plaka:
-        # Boş olmayan ve benzersiz müşteri-plaka-marka üçlülerini çek
         records_df = df[[c_musteri, c_marka, c_plaka]].dropna().drop_duplicates()
         known_records = records_df.to_dict('records')
     
-    # Seçenek listesi hazırlama
     select_options = ["-- Yeni Kayıt / Manuel Gir --"]
     for r in known_records:
         m_val = str(r.get(c_musteri, '')).strip()
@@ -126,7 +124,6 @@ elif menu == "➕ Yeni İş Ekle":
 
     selected_existing = st.selectbox("🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):", select_options)
     
-    # Varsayılan değerleri belirle
     default_musteri = ""
     default_marka = ""
     default_plaka = ""
@@ -138,7 +135,6 @@ elif menu == "➕ Yeni İş Ekle":
         default_marka = str(record.get(c_marka, ''))
         default_plaka = str(record.get(c_plaka, ''))
 
-    # Form alanları
     with st.form("yeni_is_formu"):
         col1, col2 = st.columns(2)
         with col1:
@@ -156,24 +152,29 @@ elif menu == "➕ Yeni İş Ekle":
         
         if submit:
             kalan = ucret - alinan
-            yeni_kayit = pd.DataFrame([{
-                'Müşteri': musteri,
-                'Marka/Model': marka,
-                'Plaka': plaka,
-                'Yapılan İşlem': yapilan_islem,
-                'Ücret': ucret,
-                'Alınan': alinan,
-                'Kalan': kalan,
-                'Tarih': tarih.strftime('%Y-%m-%d'),
-                'İş Tipi': is_tipi
-            }])
+            payload = {
+                "token": st.secrets["API_TOKEN"],
+                "Musteri": musteri,
+                "Marka": marka,
+                "Plaka": plaka,
+                "YapilanIslem": yapilan_islem,
+                "Ucret": ucret,
+                "Alinan": alinan,
+                "Kalan": kalan,
+                "Tarih": tarih.strftime('%Y-%m-%d'),
+                "IsTipi": is_tipi
+            }
             
-            guncel_df = pd.concat([df, yeni_kayit], ignore_index=True)
-            guncel_df = guncel_df.drop(columns=['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
-            
-            conn.update(data=guncel_df)
-            st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
-            st.cache_data.clear()
+            try:
+                response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                res_data = response.json()
+                if res_data.get("status") == "success":
+                    st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
+                    st.cache_data.clear()
+                else:
+                    st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+            except Exception as e:
+                st.error(f"Bağlantı hatası oluştu: {e}")
 
 elif menu == "💰 Müşteri Borçları":
     st.title("💰 Müşteri Borç Listesi")
