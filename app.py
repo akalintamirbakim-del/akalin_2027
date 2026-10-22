@@ -8,7 +8,7 @@ st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == "1234":  # İstediğiniz şifreyi buraya yazabilirsiniz
+        if st.session_state["password"] == "1234":
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -33,15 +33,28 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
     try:
-        # ttl=0 veya küçük bir değer sayesinde E-Tablo'daki değişimler anında çekilir
         df = conn.read(ttl=2)
+        # Sütun adlarındaki gereksiz boşlukları temizle
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception as e:
         st.error(f"Google E-Tablo'dan veri okunamadı: {e}")
-        return pd.DataFrame(columns=['Müşteri', 'Marka/Model', 'Plaka', 'Yapılan İşlem', 'Ücret', 'Alınan', 'Kalan', 'Tarih', 'İş Tipi'])
+        return pd.DataFrame()
 
 df = load_data()
+
+# Sütun adlarını esnek bulma (büyük/küçük harf duyarlılığını ortadan kaldırır)
+def find_col(df, keywords):
+    for col in df.columns:
+        for kw in keywords:
+            if kw.lower() in col.lower():
+                return col
+    return None
+
+c_ucret = find_col(df, ['ücret', 'tutar'])
+c_alinan = find_col(df, ['alınan', 'ödenen'])
+c_kalan = find_col(df, ['kalan', 'borç'])
+c_musteri = find_col(df, ['müşteri', 'firma'])
 
 st.sidebar.title("🚛 Akalın Servis")
 menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "➕ Yeni İş Ekle", "💰 Müşteri Borçları"])
@@ -49,27 +62,30 @@ menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama
 if menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
     
-    total_is = len(df)
-    total_ciro = pd.to_numeric(df['Ücret'], errors='coerce').sum() if 'Ücret' in df.columns else 0
-    total_alinan = pd.to_numeric(df['Alınan'], errors='coerce').sum() if 'Alınan' in df.columns else 0
-    total_kalan = pd.to_numeric(df['Kalan'], errors='coerce').sum() if 'Kalan' in df.columns else 0
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Toplam İş / Araç", f"{total_is}")
-    col2.metric("Toplam Ciro", f"{total_ciro:,.2f} ₺")
-    col3.metric("Tahsil Edilen", f"{total_alinan:,.2f} ₺")
-    col4.metric("Kalan Alacak (Borç)", f"{total_kalan:,.2f} ₺")
-    
-    st.markdown("---")
-    st.subheader("Son Eklenen İşler")
-    st.dataframe(df.tail(10), use_container_width=True)
+    if df.empty:
+        st.warning("Google E-Tablonuz şu an boş veya veriler okunamadı.")
+    else:
+        total_is = len(df)
+        total_ciro = pd.to_numeric(df[c_ucret], errors='coerce').sum() if c_ucret else 0
+        total_alinan = pd.to_numeric(df[c_alinan], errors='coerce').sum() if c_alinan else 0
+        total_kalan = pd.to_numeric(df[c_kalan], errors='coerce').sum() if c_kalan else 0
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Toplam İş / Araç", f"{total_is}")
+        col2.metric("Toplam Ciro", f"{total_ciro:,.2f} ₺")
+        col3.metric("Tahsil Edilen", f"{total_alinan:,.2f} ₺")
+        col4.metric("Kalan Alacak (Borç)", f"{total_kalan:,.2f} ₺")
+        
+        st.markdown("---")
+        st.subheader("Son Eklenen İşler")
+        st.dataframe(df.tail(10), use_container_width=True)
 
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
     search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", "")
     
     filtered_df = df
-    if search_term:
+    if search_term and not df.empty:
         mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         filtered_df = df[mask]
         
@@ -114,12 +130,14 @@ elif menu == "➕ Yeni İş Ekle":
 
 elif menu == "💰 Müşteri Borçları":
     st.title("💰 Müşteri Borç Listesi")
-    if 'Müşteri' in df.columns and 'Kalan' in df.columns:
-        df['Kalan_Num'] = pd.to_numeric(df['Kalan'], errors='coerce').fillna(0)
-        df['Ücret_Num'] = pd.to_numeric(df['Ücret'], errors='coerce').fillna(0)
-        df['Alınan_Num'] = pd.to_numeric(df['Alınan'], errors='coerce').fillna(0)
+    if not df.empty and c_musteri and c_kalan:
+        df['Kalan_Num'] = pd.to_numeric(df[c_kalan], errors='coerce').fillna(0)
+        df['Ücret_Num'] = pd.to_numeric(df[c_ucret], errors='coerce').fillna(0) if c_ucret else 0
+        df['Alınan_Num'] = pd.to_numeric(df[c_alinan], errors='coerce').fillna(0) if c_alinan else 0
         
-        borc_df = df.groupby('Müşteri')[['Ücret_Num', 'Alınan_Num', 'Kalan_Num']].sum().reset_index()
+        borc_df = df.groupby(c_musteri)[['Ücret_Num', 'Alınan_Num', 'Kalan_Num']].sum().reset_index()
         borc_df.columns = ['Müşteri', 'Ücret', 'Alınan', 'Kalan']
         borc_df = borc_df[borc_df['Kalan'] > 0].sort_values(by='Kalan', ascending=False)
         st.dataframe(borc_df, use_container_width=True)
+    else:
+        st.info("Borç listesini gösterebilmek için gerekli sütunlar bulunamadı.")
