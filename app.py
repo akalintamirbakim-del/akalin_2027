@@ -171,6 +171,7 @@ elif menu == "➕ Yeni İş Ekle":
                 if res_data.get("status") == "success":
                     st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
                     st.cache_data.clear()
+                    st.rerun()  # <--- BURASI EKLENDİ: Kayıttan hemen sonra sayfayı yeniler
                 else:
                     st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
             except Exception as e:
