@@ -73,7 +73,7 @@ if not df.empty:
     df['Kalan_Clean'] = parse_money(c_kalan)
 
 st.sidebar.title("🚛 Akalın Servis")
-menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "➕ Yeni İş Ekle", "💰 Müşteri Borçları"])
+menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "➕ Yeni İş Ekle", "✏️ Kayıt Düzenle", "💰 Müşteri Borçları"])
 
 if menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
@@ -130,7 +130,6 @@ elif menu == "📋 İş Listesi & Arama":
         if secilen_silme != "-- Seçiniz --":
             if st.button("Seçilen Kaydı Kalıcı Olarak Sil", type="primary"):
                 gercek_idx = secenek_map[secilen_silme]
-                # Google Sheets'te başlık 1. satır olduğu için veri satırı index + 2'dir.
                 sheets_row_index = gercek_idx + 2
                 
                 payload = {
@@ -220,6 +219,89 @@ elif menu == "➕ Yeni İş Ekle":
                     st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
             except Exception as e:
                 st.error(f"Bağlantı hatası oluştu: {e}")
+
+elif menu == "✏️ Kayıt Düzenle":
+    st.title("✏️ Mevcut Kaydı Düzenle")
+    
+    if df.empty:
+        st.info("Düzenlenecek kayıt bulunamadı.")
+    else:
+        duzenle_secenekleri = []
+        duzenle_map = {}
+        
+        for idx, row in df.iterrows():
+            tarih_val = str(row.get('Tarih', ''))
+            plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
+            musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
+            islem_val = str(row.get('Yapılan İşlem', ''))
+            
+            label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val}"
+            duzenle_secenekleri.append(label)
+            duzenle_map[label] = (idx, row)
+            
+        secilen_duzenleme = st.selectbox("Düzenlemek istediğiniz kaydı seçin:", ["-- Seçiniz --"] + duzenle_secenekleri)
+        
+        if secilen_duzenleme != "-- Seçiniz --":
+            gercek_idx, row_data = duzenle_map[secilen_duzenleme]
+            
+            # Mevcut değerleri güvenli okuma
+            def get_val(col_key, default=""):
+                if col_key and col_key in row_data:
+                    val = row_data[col_key]
+                    return "" if pd.isna(val) else str(val)
+                return default
+
+            ex_musteri = get_val(c_musteri)
+            ex_marka = get_val(c_marka)
+            ex_plaka = get_val(c_plaka)
+            ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
+            ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
+            
+            with st.form("duzenleme_formu"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    d_plaka = st.text_input("Plaka", value=ex_plaka)
+                    d_musteri = st.text_input("Müşteri Adı / Firma", value=ex_musteri)
+                    d_marka = st.text_input("Marka / Model", value=ex_marka)
+                    d_is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
+                with col2:
+                    d_tarih = st.date_input("İş Tarihi", datetime.now())
+                    d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0)
+                    d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0)
+                    d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça")
+                    
+                guncelle_submit = st.form_submit_button("Değişiklikleri Kaydet ve Güncelle")
+                
+                if guncelle_submit:
+                    d_kalan = d_ucret - d_alinan
+                    sheets_row_index = gercek_idx + 2
+                    
+                    payload = {
+                        "token": st.secrets["API_TOKEN"],
+                        "action": "update",
+                        "rowIndex": sheets_row_index,
+                        "Musteri": d_musteri,
+                        "Marka": d_marka,
+                        "Plaka": d_plaka,
+                        "YapilanIslem": d_yapilan_islem,
+                        "Ucret": d_ucret,
+                        "Alinan": d_alinan,
+                        "Kalan": d_kalan,
+                        "Tarih": d_tarih.strftime('%Y-%m-%d'),
+                        "IsTipi": d_is_tipi
+                    }
+                    
+                    try:
+                        response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                        res_data = response.json()
+                        if res_data.get("status") == "success":
+                            st.success("Kayıt başarıyla güncellendi!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Güncelleme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                    except Exception as e:
+                        st.error(f"Bağlantı hatası oluştu: {e}")
 
 elif menu == "💰 Müşteri Borçları":
     st.title("💰 Müşteri Borç Listesi")
