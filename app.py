@@ -34,7 +34,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def load_data():
     try:
         df = conn.read(ttl=2)
-        # Sütun adlarındaki gereksiz boşlukları temizle
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception as e:
@@ -43,7 +42,7 @@ def load_data():
 
 df = load_data()
 
-# Sütun adlarını esnek bulma (büyük/küçük harf duyarlılığını ortadan kaldırır)
+# Sütun adlarını akıllı bulma
 def find_col(df, keywords):
     for col in df.columns:
         for kw in keywords:
@@ -51,10 +50,26 @@ def find_col(df, keywords):
                 return col
     return None
 
-c_ucret = find_col(df, ['ücret', 'tutar'])
-c_alinan = find_col(df, ['alınan', 'ödenen'])
-c_kalan = find_col(df, ['kalan', 'borç'])
+c_ucret = find_col(df, ['ücret', 'tutar', 'fiyat'])
+c_alinan = find_col(df, ['alınan', 'ödenen', 'tahsil'])
+c_kalan = find_col(df, ['kalan', 'borç', 'bakiye'])
 c_musteri = find_col(df, ['müşteri', 'firma'])
+
+# Türkçe para formatını sayıya çeviren akıllı fonksiyon (1.500,00 -> 1500.00)
+def parse_money(series):
+    if series is None or series.name not in df.columns:
+        return pd.Series(0.0, index=df.index)
+    
+    s = df[series].astype(str)
+    s = s.str.replace('₺', '', regex=False).str.replace('TL', '', regex=False).str.replace(' ', '', regex=False)
+    # 1.234,56 formatını Python'un anlayacağı formata çevir
+    s = s.str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+    return pd.to_numeric(s, errors='coerce').fillna(0.0)
+
+if not df.empty:
+    df['Ucret_Clean'] = parse_money(c_ucret)
+    df['Alinan_Clean'] = parse_money(c_alinan)
+    df['Kalan_Clean'] = parse_money(c_kalan)
 
 st.sidebar.title("🚛 Akalın Servis")
 menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "➕ Yeni İş Ekle", "💰 Müşteri Borçları"])
@@ -66,9 +81,9 @@ if menu == "📊 Özet Panel":
         st.warning("Google E-Tablonuz şu an boş veya veriler okunamadı.")
     else:
         total_is = len(df)
-        total_ciro = pd.to_numeric(df[c_ucret], errors='coerce').sum() if c_ucret else 0
-        total_alinan = pd.to_numeric(df[c_alinan], errors='coerce').sum() if c_alinan else 0
-        total_kalan = pd.to_numeric(df[c_kalan], errors='coerce').sum() if c_kalan else 0
+        total_ciro = df['Ucret_Clean'].sum()
+        total_alinan = df['Alinan_Clean'].sum()
+        total_kalan = df['Kalan_Clean'].sum()
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Toplam İş / Araç", f"{total_is}")
@@ -124,20 +139,19 @@ elif menu == "➕ Yeni İş Ekle":
             }])
             
             guncel_df = pd.concat([df, yeni_kayit], ignore_index=True)
+            # Temizlik için eklediğimiz geçici sütunları kayda göndermeden çıkar
+            guncel_df = guncel_df.drop(columns=['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+            
             conn.update(data=guncel_df)
             st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
             st.cache_data.clear()
 
 elif menu == "💰 Müşteri Borçları":
     st.title("💰 Müşteri Borç Listesi")
-    if not df.empty and c_musteri and c_kalan:
-        df['Kalan_Num'] = pd.to_numeric(df[c_kalan], errors='coerce').fillna(0)
-        df['Ücret_Num'] = pd.to_numeric(df[c_ucret], errors='coerce').fillna(0) if c_ucret else 0
-        df['Alınan_Num'] = pd.to_numeric(df[c_alinan], errors='coerce').fillna(0) if c_alinan else 0
-        
-        borc_df = df.groupby(c_musteri)[['Ücret_Num', 'Alınan_Num', 'Kalan_Num']].sum().reset_index()
+    if not df.empty and c_musteri:
+        borc_df = df.groupby(c_musteri)[['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean']].sum().reset_index()
         borc_df.columns = ['Müşteri', 'Ücret', 'Alınan', 'Kalan']
         borc_df = borc_df[borc_df['Kalan'] > 0].sort_values(by='Kalan', ascending=False)
         st.dataframe(borc_df, use_container_width=True)
     else:
-        st.info("Borç listesini gösterebilmek için gerekli sütunlar bulunamadı.")
+        st.info("Borç listesini gösterebilmek için müşteri sütunu bulunamadı.")
