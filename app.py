@@ -42,7 +42,7 @@ def load_data():
 
 df = load_data()
 
-# Sütun adlarını akıllı bulma
+# Sütun isimlerini esnek yakalama
 def find_col(df, keywords):
     for col in df.columns:
         for kw in keywords:
@@ -50,19 +50,19 @@ def find_col(df, keywords):
                 return col
     return None
 
+c_musteri = find_col(df, ['müşteri', 'firma'])
+c_marka = find_col(df, ['marka', 'model'])
+c_plaka = find_col(df, ['plaka'])
 c_ucret = find_col(df, ['ücret', 'tutar', 'fiyat'])
 c_alinan = find_col(df, ['alınan', 'ödenen', 'tahsil'])
 c_kalan = find_col(df, ['kalan', 'borç', 'bakiye'])
-c_musteri = find_col(df, ['müşteri', 'firma'])
 
-# Türkçe para formatını sayıya çeviren akıllı fonksiyon (1.500,00 -> 1500.00)
-def parse_money(series):
-    if series is None or series.name not in df.columns:
+# Temiz para dönüştürücü
+def parse_money(series_name):
+    if not series_name or series_name not in df.columns:
         return pd.Series(0.0, index=df.index)
-    
-    s = df[series].astype(str)
+    s = df[series_name].astype(str)
     s = s.str.replace('₺', '', regex=False).str.replace('TL', '', regex=False).str.replace(' ', '', regex=False)
-    # 1.234,56 formatını Python'un anlayacağı formata çevir
     s = s.str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
     return pd.to_numeric(s, errors='coerce').fillna(0.0)
 
@@ -78,7 +78,7 @@ if menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
     
     if df.empty:
-        st.warning("Google E-Tablonuz şu an boş veya veriler okunamadı.")
+        st.info("Google E-Tablonuz şu an boş veya veriler yükleniyor...")
     else:
         total_is = len(df)
         total_ciro = df['Ucret_Clean'].sum()
@@ -109,12 +109,42 @@ elif menu == "📋 İş Listesi & Arama":
 elif menu == "➕ Yeni İş Ekle":
     st.title("➕ Yeni Araç / İş Ekle")
     
+    # --- OTOMATİK TAMAMLAMA VERİ SETİ (KAYITLI MÜŞTERİ / ARAÇLAR) ---
+    known_records = []
+    if not df.empty and c_musteri and c_plaka:
+        # Boş olmayan ve benzersiz müşteri-plaka-marka üçlülerini çek
+        records_df = df[[c_musteri, c_marka, c_plaka]].dropna().drop_duplicates()
+        known_records = records_df.to_dict('records')
+    
+    # Seçenek listesi hazırlama
+    select_options = ["-- Yeni Kayıt / Manuel Gir --"]
+    for r in known_records:
+        m_val = str(r.get(c_musteri, '')).strip()
+        p_val = str(r.get(c_plaka, '')).strip()
+        mk_val = str(r.get(c_marka, '')).strip()
+        select_options.append(f"{p_val} | {m_val} ({mk_val})")
+
+    selected_existing = st.selectbox("🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):", select_options)
+    
+    # Varsayılan değerleri belirle
+    default_musteri = ""
+    default_marka = ""
+    default_plaka = ""
+    
+    if selected_existing != "-- Yeni Kayıt / Manuel Gir --":
+        idx = select_options.index(selected_existing) - 1
+        record = known_records[idx]
+        default_musteri = str(record.get(c_musteri, ''))
+        default_marka = str(record.get(c_marka, ''))
+        default_plaka = str(record.get(c_plaka, ''))
+
+    # Form alanları
     with st.form("yeni_is_formu"):
         col1, col2 = st.columns(2)
         with col1:
-            musteri = st.text_input("Müşteri Adı / Firma")
-            marka = st.text_input("Marka / Model")
-            plaka = st.text_input("Plaka")
+            plaka = st.text_input("Plaka", value=default_plaka)
+            musteri = st.text_input("Müşteri Adı / Firma", value=default_musteri)
+            marka = st.text_input("Marka / Model", value=default_marka)
             is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
         with col2:
             tarih = st.date_input("İş Tarihi", datetime.now())
@@ -139,7 +169,6 @@ elif menu == "➕ Yeni İş Ekle":
             }])
             
             guncel_df = pd.concat([df, yeni_kayit], ignore_index=True)
-            # Temizlik için eklediğimiz geçici sütunları kayda göndermeden çıkar
             guncel_df = guncel_df.drop(columns=['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
             
             conn.update(data=guncel_df)
