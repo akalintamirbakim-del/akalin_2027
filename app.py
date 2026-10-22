@@ -4,12 +4,12 @@ import requests
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛", layout="wide")
+st.set_page_config(page_title="Akalın Tamir Bakım İş Takip", page_icon="🚛", layout="wide")
 
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == "1234":
+        if st.session_state["password"] == "Akalın.5444":
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
