@@ -9,7 +9,7 @@ st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == "1234":
+        if st.session_state["password"] == "Akalın.5444":
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -73,18 +73,18 @@ if not df.empty:
     df['Kalan_Clean'] = parse_money(c_kalan)
 
 st.sidebar.title("🚛 Akalın Servis")
-# İLK AÇILAN PANEL "Yeni İş Ekle" Olarak Ayarlandı
 menu = st.sidebar.radio("Menü", ["➕ Yeni İş Ekle", "📊 Özet Panel", "📋 İş Listesi & Arama", "✏️ Kayıt Düzenle", "💰 Müşteri Borçları"])
 
 if menu == "➕ Yeni İş Ekle":
     st.title("➕ Yeni Araç / İş Ekle")
     
-    # Alanları temizleme butonu için session state sıfırlama
-    if st.button("🧹 Formu / Alanları Temizle"):
-        for key in ["input_plaka", "input_musteri", "input_marka", "input_ucret", "input_alinan", "input_yapilan"]:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.rerun()
+    # Session state başlangıç değerleri
+    if "form_plaka" not in st.session_state: st.session_state["form_plaka"] = ""
+    if "form_musteri" not in st.session_state: st.session_state["form_musteri"] = ""
+    if "form_marka" not in st.session_state: st.session_state["form_marka"] = ""
+    if "form_ucret" not in st.session_state: st.session_state["form_ucret"] = 0.0
+    if "form_alinan" not in st.session_state: st.session_state["form_alinan"] = 0.0
+    if "form_yapilan" not in st.session_state: st.session_state["form_yapilan"] = ""
 
     known_records = []
     if not df.empty and c_musteri and c_plaka:
@@ -98,36 +98,49 @@ if menu == "➕ Yeni İş Ekle":
         mk_val = str(r.get(c_marka, '')).strip()
         select_options.append(f"{p_val} | {m_val} ({mk_val})")
 
-    selected_existing = st.selectbox("🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):", select_options)
-    
-    default_musteri = ""
-    default_marka = ""
-    default_plaka = ""
-    
-    if selected_existing != "-- Yeni Kayıt / Manuel Gir --":
-        try:
-            idx = select_options.index(selected_existing) - 1
-            record = known_records[idx]
-            default_musteri = str(record.get(c_musteri, ''))
-            default_marka = str(record.get(c_marka, ''))
-            default_plaka = str(record.get(c_plaka, ''))
-        except:
-            pass
+    # Araç seçildiğinde tetiklenen fonksiyon
+    def on_select_change():
+        secim = st.session_state["secilen_arac_box"]
+        if secim != "-- Yeni Kayıt / Manuel Gir --":
+            try:
+                idx = select_options.index(secim) - 1
+                record = known_records[idx]
+                st.session_state["form_musteri"] = str(record.get(c_musteri, ''))
+                st.session_state["form_marka"] = str(record.get(c_marka, ''))
+                st.session_state["form_plaka"] = str(record.get(c_plaka, ''))
+            except:
+                pass
+        else:
+            st.session_state["form_musteri"] = ""
+            st.session_state["form_marka"] = ""
+            st.session_state["form_plaka"] = ""
+
+    st.selectbox("🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):", select_options, key="secilen_arac_box", on_change=on_select_change)
+
+    # Temizleme Butonu
+    if st.button("🧹 Alanları Temizle"):
+        st.session_state["form_plaka"] = ""
+        st.session_state["form_musteri"] = ""
+        st.session_state["form_marka"] = ""
+        st.session_state["form_ucret"] = 0.0
+        st.session_state["form_alinan"] = 0.0
+        st.session_state["form_yapilan"] = ""
+        st.rerun()
 
     with st.form("yeni_is_formu"):
         col1, col2 = st.columns(2)
         with col1:
-            plaka = st.text_input("Plaka", value=default_plaka, key="input_plaka")
-            musteri = st.text_input("Müşteri Adı / Firma", value=default_musteri, key="input_musteri")
-            marka = st.text_input("Marka / Model", value=default_marka, key="input_marka")
+            plaka = st.text_input("Plaka", value=st.session_state["form_plaka"])
+            musteri = st.text_input("Müşteri Adı / Firma", value=st.session_state["form_musteri"])
+            marka = st.text_input("Marka / Model", value=st.session_state["form_marka"])
             is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
         with col2:
             tarih = st.date_input("İş Tarihi", datetime.now())
-            ucret = st.number_input("Toplam Ücret (₺)", min_value=0.0, step=100.0, key="input_ucret")
-            alinan = st.number_input("Alınan Ödenen (₺)", min_value=0.0, step=100.0, key="input_alinan")
-            yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", key="input_yapilan")
+            ucret = st.number_input("Toplam Ücret (₺)", value=st.session_state["form_ucret"], min_value=0.0, step=100.0)
+            alinan = st.number_input("Alınan Ödenen (₺)", value=st.session_state["form_alinan"], min_value=0.0, step=100.0)
+            yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=st.session_state["form_yapilan"])
             
-        submit = st.form_submit_button("Kaydet ve Google E-Tabloya Gönder")
+        submit = st.form_submit_button("Kaydet and Google E-Tabloya Gönder")
         
         if submit:
             kalan = ucret - alinan
@@ -188,7 +201,6 @@ elif menu == "📋 İş Listesi & Arama":
         
     st.dataframe(filtered_df, use_container_width=True)
     
-    # --- KAYIT / SATIR SİLME BÖLÜMÜ ---
     if not df.empty:
         st.markdown("---")
         st.subheader("🗑️ Kayıt / Satır Sil")
