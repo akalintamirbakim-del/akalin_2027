@@ -72,6 +72,8 @@ if not df.empty:
     df['Ucret_Clean'] = parse_money(c_ucret)
     df['Alinan_Clean'] = parse_money(c_alinan)
     df['Kalan_Clean'] = parse_money(c_kalan)
+    if 'Tarih' in df.columns:
+        df['Tarih_DT'] = pd.to_datetime(df['Tarih'], errors='coerce')
 
 # --- TABLO GÖRÜNÜMÜ VE RENKLENDİRME FONKSİYONU ---
 def get_clean_display_df(input_df):
@@ -104,7 +106,7 @@ def display_styled_dataframe(input_df):
         if val == "Ücret Giriniz":
             return 'color: #ff4b4b; font-weight: bold;'  # Kırmızı
         elif val == "Bekleniyor":
-            return 'color: #d4ac0d; font-weight: bold;'  # Sarı / Altın Sarısı
+            return 'color: #d4ac0d; font-weight: bold;'  # Sarı
         elif val == "Ödendi":
             return 'color: #27ae60; font-weight: bold;'  # Yeşil
         return ''
@@ -233,12 +235,43 @@ elif menu == "📊 Özet Panel":
 
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
-    search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", "")
     
-    filtered_df = df
-    if search_term and not df.empty:
-        mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
-        filtered_df = df[mask]
+    # Yıl ve Ay Seçim Filtreleri
+    f_col1, f_col2, f_col3 = st.columns(3)
+    
+    years = ["Tümü"]
+    if not df.empty and 'Tarih_DT' in df.columns:
+        valid_years = df['Tarih_DT'].dt.year.dropna().unique()
+        years.extend(sorted([int(y) for y in valid_years], reverse=True))
+        
+    months = {
+        "Tümü": 0, "Ocak": 1, "Şubat": 2, "Mart": 3, "Nisan": 4, 
+        "Mayıs": 5, "Haziran": 6, "Temmuz": 7, "Ağustos": 8, 
+        "Eylül": 9, "Ekim": 10, "Kasım": 11, "Aralık": 12
+    }
+    
+    with f_col1:
+        selected_year = st.selectbox("📅 Yıl Seçin", years)
+    with f_col2:
+        selected_month_name = st.selectbox("🗓️ Ay Seçin", list(months.keys()))
+    with f_col3:
+        search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", "")
+        
+    filtered_df = df.copy()
+    if not filtered_df.empty and 'Tarih_DT' in filtered_df.columns:
+        if selected_year != "Tümü":
+            filtered_df = filtered_df[filtered_df['Tarih_DT'].dt.year == selected_year]
+        if selected_month_name != "Tümü":
+            m_num = months[selected_month_name]
+            filtered_df = filtered_df[filtered_df['Tarih_DT'].dt.month == m_num]
+            
+    if search_term and not filtered_df.empty:
+        mask = filtered_df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
+        filtered_df = filtered_df[mask]
+        
+    # Tarihe göre sıralama: En üstte en eski olacak şekilde (Artan sıralama)
+    if not filtered_df.empty and 'Tarih_DT' in filtered_df.columns:
+        filtered_df = filtered_df.sort_values(by='Tarih_DT', ascending=True)
         
     display_styled_dataframe(filtered_df)
     
@@ -378,7 +411,6 @@ elif menu == "🔍 Müşteri Geçmişi":
         
         if selected_cust != "-- Müşteri Seçiniz --":
             if 'Tarih' in df.columns:
-                df['Tarih_DT'] = pd.to_datetime(df['Tarih'], errors='coerce')
                 cust_df = df[df[c_musteri].astype(str) == selected_cust].copy()
                 
                 if not cust_df.empty:
@@ -400,6 +432,10 @@ elif menu == "🔍 Müşteri Geçmişi":
                         
                     mask = (cust_df['Tarih_DT'].dt.date >= start_date) & (cust_df['Tarih_DT'].dt.date <= end_date)
                     filtered_cust_df = cust_df[mask]
+                    
+                    # En üstte en eski olacak şekilde sıralama (Artan tarih)
+                    if not filtered_cust_df.empty and 'Tarih_DT' in filtered_cust_df.columns:
+                        filtered_cust_df = filtered_cust_df.sort_values(by='Tarih_DT', ascending=True)
                     
                     st.markdown("---")
                     st.subheader(f"📊 {selected_cust} İçin Tarih Aralığı Raporu")
