@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import requests
+import io
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
@@ -375,13 +376,17 @@ elif menu == "🔍 Müşteri Geçmişi":
                         st.markdown("---")
                         display_df = filtered_cust_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
                         
-                        # --- TÜRKÇE KARAKTER UYUMLU CSV İNDİRME ---
-                        csv_data = display_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+                        # --- EXCEL (.xlsx) OLARAK İNDİRME ---
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            display_df.to_excel(writer, index=False, sheet_name='Müşteri Geçmişi')
+                        excel_data = output.getvalue()
+
                         st.download_button(
-                            label="📥 Bu Raporu CSV Olarak İndir (Türkçe Karakter Uyumlu)",
-                            data=csv_data,
-                            file_name=f"{selected_cust}_islem_gecmisi.csv",
-                            mime="text/csv",
+                            label="📥 Bu Raporu Excel (.xlsx) Olarak İndir",
+                            data=excel_data,
+                            file_name=f"{selected_cust}_islem_gecmisi.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
                         
                         st.dataframe(display_df, use_container_width=True)
