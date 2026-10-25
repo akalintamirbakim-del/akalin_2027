@@ -73,20 +73,48 @@ if not df.empty:
     df['Alinan_Clean'] = parse_money(c_alinan)
     df['Kalan_Clean'] = parse_money(c_kalan)
 
-# --- ÜCRETİ 0 OLANLARI DÜZENLEYEN GÖRÜNÜM FONKSİYONU ---
+# --- TABLO GÖRÜNÜMÜ VE RENKLENDİRME FONKSİYONU ---
 def get_clean_display_df(input_df):
     if input_df.empty:
         return input_df
     d_df = input_df.copy()
-    if 'Ucret_Clean' in d_df.columns:
-        zero_mask = d_df['Ucret_Clean'] == 0
+    if 'Ucret_Clean' in d_df.columns and 'Kalan_Clean' in d_df.columns:
+        zero_ucret_mask = d_df['Ucret_Clean'] == 0
+        
+        # Ücret 0 ise "Ücret Giriniz"
         if c_ucret and c_ucret in d_df.columns:
             d_df[c_ucret] = d_df[c_ucret].astype(object)
-            d_df.loc[zero_mask, c_ucret] = "Ücret Giriniz"
+            d_df.loc[zero_ucret_mask, c_ucret] = "Ücret Giriniz"
+            
         if c_kalan and c_kalan in d_df.columns:
             d_df[c_kalan] = d_df[c_kalan].astype(object)
-            d_df.loc[zero_mask, c_kalan] = "Bekleniyor"
+            # Ücret 0 ise kalan "Bekleniyor"
+            d_df.loc[zero_ucret_mask, c_kalan] = "Bekleniyor"
+            
+            # Kalan 0 ve ücret 0'dan büyükse "Ödendi"
+            zero_kalan_mask = (d_df['Kalan_Clean'] == 0) & (~zero_ucret_mask)
+            d_df.loc[zero_kalan_mask, c_kalan] = "Ödendi"
+            
     return d_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+
+def display_styled_dataframe(input_df):
+    display_df = get_clean_display_df(input_df)
+    
+    def color_status(val):
+        if val == "Ücret Giriniz":
+            return 'color: #ff4b4b; font-weight: bold;'  # Kırmızı
+        elif val == "Bekleniyor":
+            return 'color: #d4ac0d; font-weight: bold;'  # Sarı / Altın Sarısı
+        elif val == "Ödendi":
+            return 'color: #27ae60; font-weight: bold;'  # Yeşil
+        return ''
+    
+    try:
+        styled = display_df.style.map(color_status)
+    except AttributeError:
+        styled = display_df.style.applymap(color_status)
+        
+    st.dataframe(styled, use_container_width=True)
 
 st.sidebar.title("🚛 Akalın Servis")
 menu = st.sidebar.radio("Menü", ["➕ Yeni İş Ekle", "📊 Özet Panel", "📋 İş Listesi & Arama", "✏️ Kayıt Düzenle", "🔍 Müşteri Geçmişi", "💰 Müşteri Borçları"])
@@ -201,7 +229,7 @@ elif menu == "📊 Özet Panel":
         
         st.markdown("---")
         st.subheader("Son Eklenen İşler")
-        st.dataframe(get_clean_display_df(df.tail(10)), use_container_width=True)
+        display_styled_dataframe(df.tail(10))
 
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
@@ -212,7 +240,7 @@ elif menu == "📋 İş Listesi & Arama":
         mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         filtered_df = df[mask]
         
-    st.dataframe(get_clean_display_df(filtered_df), use_container_width=True)
+    display_styled_dataframe(filtered_df)
     
     if not df.empty:
         st.markdown("---")
@@ -404,7 +432,7 @@ elif menu == "🔍 Müşteri Geçmişi":
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )
                         
-                        st.dataframe(display_df, use_container_width=True)
+                        display_styled_dataframe(filtered_cust_df)
                     else:
                         st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
                 else:
