@@ -275,4 +275,119 @@ elif menu == "✏️ Kayıt Düzenle":
             ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
             ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
             
-            with st.form("duzenleme_
+            with st.form("duzenleme_formu"):
+                duzen_col1, duzen_col2 = st.columns(2)
+                with duzen_col1:
+                    d_plaka = st.text_input("Plaka", value=ex_plaka)
+                    d_musteri = st.text_input("Müşteri Adı / Firma", value=ex_musteri)
+                    d_marka = st.text_input("Marka / Model", value=ex_marka)
+                    d_is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
+                with duzen_col2:
+                    d_tarih = st.date_input("İş Tarihi", datetime.now())
+                    d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0)
+                    d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0)
+                    d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça")
+                    
+                guncelle_submit = st.form_submit_button("Değişiklikleri Kaydet ve Güncelle")
+                
+                if guncelle_submit:
+                    d_kalan = d_ucret - d_alinan
+                    sheets_row_index = gercek_idx + 2
+                    
+                    payload = {
+                        "token": st.secrets["API_TOKEN"],
+                        "action": "update",
+                        "rowIndex": sheets_row_index,
+                        "Musteri": d_musteri,
+                        "Marka": d_marka,
+                        "Plaka": d_plaka,
+                        "YapilanIslem": d_yapilan_islem,
+                        "Ucret": d_ucret,
+                        "Alinan": d_alinan,
+                        "Kalan": d_kalan,
+                        "Tarih": d_tarih.strftime('%Y-%m-%d'),
+                        "IsTipi": d_is_tipi
+                    }
+                    
+                    try:
+                        response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                        res_data = response.json()
+                        if res_data.get("status") == "success":
+                            st.success("Kayıt başarıyla güncellendi!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Güncelleme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                    except Exception as e:
+                        st.error(f"Bağlantı hatası oluştu: {e}")
+
+elif menu == "🔍 Müşteri Geçmişi":
+    st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
+    
+    if df.empty or not c_musteri:
+        st.info("Tabloda gösterilecek müşteri verisi bulunamadı.")
+    else:
+        unique_customers = df[c_musteri].dropna().astype(str).unique().tolist()
+        unique_customers.insert(0, "-- Müşteri Seçiniz --")
+        
+        selected_cust = st.selectbox("Rapor Alınacak Müşteriyi Seçin:", unique_customers)
+        
+        if selected_cust != "-- Müşteri Seçiniz --":
+            if 'Tarih' in df.columns:
+                df['Tarih_DT'] = pd.to_datetime(df['Tarih'], errors='coerce')
+                cust_df = df[df[c_musteri].astype(str) == selected_cust].copy()
+                
+                if not cust_df.empty:
+                    min_date = cust_df['Tarih_DT'].min()
+                    max_date = cust_df['Tarih_DT'].max()
+                    
+                    if pd.isna(min_date): min_date = datetime.now().date()
+                    else: min_date = min_date.date()
+                        
+                    if pd.isna(max_date): max_date = datetime.now().date()
+                    else: max_date = max_date.date()
+                    
+                    st.markdown("---")
+                    tarih_col1, tarih_col2 = st.columns(2)
+                    with tarih_col1:
+                        start_date = st.date_input("Başlangıç Tarihi", value=min_date)
+                    with tarih_col2:
+                        end_date = st.date_input("Bitiş Tarihi", value=max_date)
+                        
+                    mask = (cust_df['Tarih_DT'].dt.date >= start_date) & (cust_df['Tarih_DT'].dt.date <= end_date)
+                    filtered_cust_df = cust_df[mask]
+                    
+                    st.markdown("---")
+                    st.subheader(f"📊 {selected_cust} İçin Tarih Aralığı Raporu")
+                    
+                    if not filtered_cust_df.empty:
+                        t_is = len(filtered_cust_df)
+                        t_ciro = filtered_cust_df['Ucret_Clean'].sum()
+                        t_alinan = filtered_cust_df['Alinan_Clean'].sum()
+                        t_kalan = filtered_cust_df['Kalan_Clean'].sum()
+                        
+                        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                        m_col1.metric("Toplam İş", f"{t_is}")
+                        m_col2.metric("Toplam Ücret", f"{t_ciro:,.2f} ₺")
+                        m_col3.metric("Ödenen", f"{t_alinan:,.2f} ₺")
+                        m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
+                        
+                        st.markdown("---")
+                        display_df = filtered_cust_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+                        st.dataframe(display_df, use_container_width=True)
+                    else:
+                        st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
+                else:
+                    st.warning("Bu müşteriye ait kayıt bulunamadı.")
+            else:
+                st.error("Tabloda 'Tarih' sütunu bulunamadığı için tarih filtrelemesi yapılamıyor.")
+
+elif menu == "💰 Müşteri Borçları":
+    st.title("💰 Müşteri Borç Listesi")
+    if not df.empty and c_musteri:
+        borc_df = df.groupby(c_musteri)[['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean']].sum().reset_index()
+        borc_df.columns = ['Müşteri', 'Ücret', 'Alınan', 'Kalan']
+        borc_df = borc_df[borc_df['Kalan'] > 0].sort_values(by='Kalan', ascending=False)
+        st.dataframe(borc_df, use_container_width=True)
+    else:
+        st.info("Bu listede borçları gösterebilmek için müşteri sütunu bulunamadı.")
