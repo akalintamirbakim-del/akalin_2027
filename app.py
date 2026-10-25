@@ -4,12 +4,12 @@ import requests
 from datetime import datetime
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Akalın Tamir Bakım İş Takip", page_icon="🚛", layout="wide")
+st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛", layout="wide")
 
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == "Akalın.5444":
+        if st.session_state["password"] == "1234":
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -73,9 +73,90 @@ if not df.empty:
     df['Kalan_Clean'] = parse_money(c_kalan)
 
 st.sidebar.title("🚛 Akalın Servis")
-menu = st.sidebar.radio("Menü", ["📊 Özet Panel", "📋 İş Listesi & Arama", "➕ Yeni İş Ekle", "✏️ Kayıt Düzenle", "💰 Müşteri Borçları"])
+# İLK AÇILAN PANEL "Yeni İş Ekle" Olarak Ayarlandı
+menu = st.sidebar.radio("Menü", ["➕ Yeni İş Ekle", "📊 Özet Panel", "📋 İş Listesi & Arama", "✏️ Kayıt Düzenle", "💰 Müşteri Borçları"])
 
-if menu == "📊 Özet Panel":
+if menu == "➕ Yeni İş Ekle":
+    st.title("➕ Yeni Araç / İş Ekle")
+    
+    # Alanları temizleme butonu için session state sıfırlama
+    if st.button("🧹 Formu / Alanları Temizle"):
+        for key in ["input_plaka", "input_musteri", "input_marka", "input_ucret", "input_alinan", "input_yapilan"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+    known_records = []
+    if not df.empty and c_musteri and c_plaka:
+        records_df = df[[c_musteri, c_marka, c_plaka]].dropna().drop_duplicates()
+        known_records = records_df.to_dict('records')
+    
+    select_options = ["-- Yeni Kayıt / Manuel Gir --"]
+    for r in known_records:
+        m_val = str(r.get(c_musteri, '')).strip()
+        p_val = str(r.get(c_plaka, '')).strip()
+        mk_val = str(r.get(c_marka, '')).strip()
+        select_options.append(f"{p_val} | {m_val} ({mk_val})")
+
+    selected_existing = st.selectbox("🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):", select_options)
+    
+    default_musteri = ""
+    default_marka = ""
+    default_plaka = ""
+    
+    if selected_existing != "-- Yeni Kayıt / Manuel Gir --":
+        try:
+            idx = select_options.index(selected_existing) - 1
+            record = known_records[idx]
+            default_musteri = str(record.get(c_musteri, ''))
+            default_marka = str(record.get(c_marka, ''))
+            default_plaka = str(record.get(c_plaka, ''))
+        except:
+            pass
+
+    with st.form("yeni_is_formu"):
+        col1, col2 = st.columns(2)
+        with col1:
+            plaka = st.text_input("Plaka", value=default_plaka, key="input_plaka")
+            musteri = st.text_input("Müşteri Adı / Firma", value=default_musteri, key="input_musteri")
+            marka = st.text_input("Marka / Model", value=default_marka, key="input_marka")
+            is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
+        with col2:
+            tarih = st.date_input("İş Tarihi", datetime.now())
+            ucret = st.number_input("Toplam Ücret (₺)", min_value=0.0, step=100.0, key="input_ucret")
+            alinan = st.number_input("Alınan Ödenen (₺)", min_value=0.0, step=100.0, key="input_alinan")
+            yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", key="input_yapilan")
+            
+        submit = st.form_submit_button("Kaydet ve Google E-Tabloya Gönder")
+        
+        if submit:
+            kalan = ucret - alinan
+            payload = {
+                "token": st.secrets["API_TOKEN"],
+                "Musteri": musteri,
+                "Marka": marka,
+                "Plaka": plaka,
+                "YapilanIslem": yapilan_islem,
+                "Ucret": ucret,
+                "Alinan": alinan,
+                "Kalan": kalan,
+                "Tarih": tarih.strftime('%Y-%m-%d'),
+                "IsTipi": is_tipi
+            }
+            
+            try:
+                response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                res_data = response.json()
+                if res_data.get("status") == "success":
+                    st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+            except Exception as e:
+                st.error(f"Bağlantı hatası oluştu: {e}")
+
+elif menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
     
     if df.empty:
@@ -150,76 +231,6 @@ elif menu == "📋 İş Listesi & Arama":
                 except Exception as e:
                     st.error(f"Bağlantı hatası oluştu: {e}")
 
-elif menu == "➕ Yeni İş Ekle":
-    st.title("➕ Yeni Araç / İş Ekle")
-    
-    known_records = []
-    if not df.empty and c_musteri and c_plaka:
-        records_df = df[[c_musteri, c_marka, c_plaka]].dropna().drop_duplicates()
-        known_records = records_df.to_dict('records')
-    
-    select_options = ["-- Yeni Kayıt / Manuel Gir --"]
-    for r in known_records:
-        m_val = str(r.get(c_musteri, '')).strip()
-        p_val = str(r.get(c_plaka, '')).strip()
-        mk_val = str(r.get(c_marka, '')).strip()
-        select_options.append(f"{p_val} | {m_val} ({mk_val})")
-
-    selected_existing = st.selectbox("🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):", select_options)
-    
-    default_musteri = ""
-    default_marka = ""
-    default_plaka = ""
-    
-    if selected_existing != "-- Yeni Kayıt / Manuel Gir --":
-        idx = select_options.index(selected_existing) - 1
-        record = known_records[idx]
-        default_musteri = str(record.get(c_musteri, ''))
-        default_marka = str(record.get(c_marka, ''))
-        default_plaka = str(record.get(c_plaka, ''))
-
-    with st.form("yeni_is_formu"):
-        col1, col2 = st.columns(2)
-        with col1:
-            plaka = st.text_input("Plaka", value=default_plaka)
-            musteri = st.text_input("Müşteri Adı / Firma", value=default_musteri)
-            marka = st.text_input("Marka / Model", value=default_marka)
-            is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
-        with col2:
-            tarih = st.date_input("İş Tarihi", datetime.now())
-            ucret = st.number_input("Toplam Ücret (₺)", min_value=0.0, step=100.0)
-            alinan = st.number_input("Alınan Ödenen (₺)", min_value=0.0, step=100.0)
-            yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça")
-            
-        submit = st.form_submit_button("Kaydet ve Google E-Tabloya Gönder")
-        
-        if submit:
-            kalan = ucret - alinan
-            payload = {
-                "token": st.secrets["API_TOKEN"],
-                "Musteri": musteri,
-                "Marka": marka,
-                "Plaka": plaka,
-                "YapilanIslem": yapilan_islem,
-                "Ucret": ucret,
-                "Alinan": alinan,
-                "Kalan": kalan,
-                "Tarih": tarih.strftime('%Y-%m-%d'),
-                "IsTipi": is_tipi
-            }
-            
-            try:
-                response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
-                res_data = response.json()
-                if res_data.get("status") == "success":
-                    st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
-            except Exception as e:
-                st.error(f"Bağlantı hatası oluştu: {e}")
-
 elif menu == "✏️ Kayıt Düzenle":
     st.title("✏️ Mevcut Kaydı Düzenle")
     
@@ -233,7 +244,6 @@ elif menu == "✏️ Kayıt Düzenle":
             tarih_val = str(row.get('Tarih', ''))
             plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
             musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
-            islem_val = str(row.get('Yapılan İşlem', ''))
             
             label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val}"
             duzenle_secenekleri.append(label)
@@ -244,7 +254,6 @@ elif menu == "✏️ Kayıt Düzenle":
         if secilen_duzenleme != "-- Seçiniz --":
             gercek_idx, row_data = duzenle_map[secilen_duzenleme]
             
-            # Mevcut değerleri güvenli okuma
             def get_val(col_key, default=""):
                 if col_key and col_key in row_data:
                     val = row_data[col_key]
