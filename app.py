@@ -81,8 +81,10 @@ def get_clean_display_df(input_df):
     if 'Ucret_Clean' in d_df.columns:
         zero_mask = d_df['Ucret_Clean'] == 0
         if c_ucret and c_ucret in d_df.columns:
+            d_df[c_ucret] = d_df[c_ucret].astype(object)
             d_df.loc[zero_mask, c_ucret] = "Ücret Giriniz"
         if c_kalan and c_kalan in d_df.columns:
+            d_df[c_kalan] = d_df[c_kalan].astype(object)
             d_df.loc[zero_mask, c_kalan] = "Bekleniyor"
     return d_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
 
