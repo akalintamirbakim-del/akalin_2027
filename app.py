@@ -73,6 +73,19 @@ if not df.empty:
     df['Alinan_Clean'] = parse_money(c_alinan)
     df['Kalan_Clean'] = parse_money(c_kalan)
 
+# --- ÜCRETİ 0 OLANLARI DÜZENLEYEN GÖRÜNÜM FONKSİYONU ---
+def get_clean_display_df(input_df):
+    if input_df.empty:
+        return input_df
+    d_df = input_df.copy()
+    if 'Ucret_Clean' in d_df.columns:
+        zero_mask = d_df['Ucret_Clean'] == 0
+        if c_ucret and c_ucret in d_df.columns:
+            d_df.loc[zero_mask, c_ucret] = "Ücret Giriniz"
+        if c_kalan and c_kalan in d_df.columns:
+            d_df.loc[zero_mask, c_kalan] = "Bekleniyor"
+    return d_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+
 st.sidebar.title("🚛 Akalın Servis")
 menu = st.sidebar.radio("Menü", ["➕ Yeni İş Ekle", "📊 Özet Panel", "📋 İş Listesi & Arama", "✏️ Kayıt Düzenle", "🔍 Müşteri Geçmişi", "💰 Müşteri Borçları"])
 
@@ -186,7 +199,7 @@ elif menu == "📊 Özet Panel":
         
         st.markdown("---")
         st.subheader("Son Eklenen İşler")
-        st.dataframe(df.tail(10), use_container_width=True)
+        st.dataframe(get_clean_display_df(df.tail(10)), use_container_width=True)
 
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
@@ -197,7 +210,7 @@ elif menu == "📋 İş Listesi & Arama":
         mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         filtered_df = df[mask]
         
-    st.dataframe(filtered_df, use_container_width=True)
+    st.dataframe(get_clean_display_df(filtered_df), use_container_width=True)
     
     if not df.empty:
         st.markdown("---")
@@ -374,7 +387,7 @@ elif menu == "🔍 Müşteri Geçmişi":
                         m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
                         
                         st.markdown("---")
-                        display_df = filtered_cust_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+                        display_df = get_clean_display_df(filtered_cust_df)
                         
                         # --- EXCEL (.xlsx) OLARAK İNDİRME ---
                         output = io.BytesIO()
