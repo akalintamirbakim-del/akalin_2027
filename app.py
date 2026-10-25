@@ -9,7 +9,7 @@ st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == "Akalın.5444":
+        if st.session_state["password"] == "1234":
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -125,13 +125,13 @@ if menu == "➕ Yeni İş Ekle":
         st.rerun()
 
     with st.form("yeni_is_formu"):
-        col1, col2 = st.columns(2)
-        with col1:
+        yeni_col1, yeni_col2 = st.columns(2)
+        with yeni_col1:
             plaka = st.text_input("Plaka", value=st.session_state["form_plaka"])
             musteri = st.text_input("Müşteri Adı / Firma", value=st.session_state["form_musteri"])
             marka = st.text_input("Marka / Model", value=st.session_state["form_marka"])
             is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
-        with col2:
+        with yeni_col2:
             tarih = st.date_input("İş Tarihi", datetime.now())
             ucret = st.number_input("Toplam Ücret (₺)", value=st.session_state["form_ucret"], min_value=0.0, step=100.0)
             alinan = st.number_input("Alınan Ödenen (₺)", value=st.session_state["form_alinan"], min_value=0.0, step=100.0)
@@ -177,4 +177,102 @@ elif menu == "📊 Özet Panel":
         total_alinan = df['Alinan_Clean'].sum()
         total_kalan = df['Kalan_Clean'].sum()
         
-        col1, col2
+        ozet_col1, ozet_col2, ozet_col3, ozet_col4 = st.columns(4)
+        ozet_col1.metric("Toplam İş / Araç", f"{total_is}")
+        ozet_col2.metric("Toplam Ciro", f"{total_ciro:,.2f} ₺")
+        ozet_col3.metric("Tahsil Edilen", f"{total_alinan:,.2f} ₺")
+        ozet_col4.metric("Kalan Alacak (Borç)", f"{total_kalan:,.2f} ₺")
+        
+        st.markdown("---")
+        st.subheader("Son Eklenen İşler")
+        st.dataframe(df.tail(10), use_container_width=True)
+
+elif menu == "📋 İş Listesi & Arama":
+    st.title("📋 İş Geçmişi ve Arama")
+    search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", "")
+    
+    filtered_df = df
+    if search_term and not df.empty:
+        mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
+        filtered_df = df[mask]
+        
+    st.dataframe(filtered_df, use_container_width=True)
+    
+    if not df.empty:
+        st.markdown("---")
+        st.subheader("🗑️ Kayıt / Satır Sil")
+        
+        silme_secenekleri = []
+        secenek_map = {}
+        
+        for idx, row in df.iterrows():
+            tarih_val = str(row.get('Tarih', ''))
+            plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
+            musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
+            islem_val = str(row.get('Yapılan İşlem', ''))
+            
+            label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val} | İşlem: {islem_val[:30]}"
+            silme_secenekleri.append(label)
+            secenek_map[label] = idx
+        
+        secilen_silme = st.selectbox("Silmek istediğiniz kaydı seçin:", ["-- Seçiniz --"] + silme_secenekleri)
+        
+        if secilen_silme != "-- Seçiniz --":
+            if st.button("Seçilen Kaydı Kalıcı Olarak Sil", type="primary"):
+                gercek_idx = secenek_map[secilen_silme]
+                sheets_row_index = gercek_idx + 2
+                
+                payload = {
+                    "token": st.secrets["API_TOKEN"],
+                    "action": "delete",
+                    "rowIndex": sheets_row_index
+                }
+                
+                try:
+                    response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                    res_data = response.json()
+                    if res_data.get("status") == "success":
+                        st.success("Kayıt başarıyla silindi ve tablo güncellendi!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                except Exception as e:
+                    st.error(f"Bağlantı hatası oluştu: {e}")
+
+elif menu == "✏️ Kayıt Düzenle":
+    st.title("✏️ Mevcut Kaydı Düzenle")
+    
+    if df.empty:
+        st.info("Düzenlenecek kayıt bulunamadı.")
+    else:
+        duzenle_secenekleri = []
+        duzenle_map = {}
+        
+        for idx, row in df.iterrows():
+            tarih_val = str(row.get('Tarih', ''))
+            plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
+            musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
+            
+            label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val}"
+            duzenle_secenekleri.append(label)
+            duzenle_map[label] = (idx, row)
+            
+        secilen_duzenleme = st.selectbox("Düzenlemek istediğiniz kaydı seçin:", ["-- Seçiniz --"] + duzenle_secenekleri)
+        
+        if secilen_duzenleme != "-- Seçiniz --":
+            gercek_idx, row_data = duzenle_map[secilen_duzenleme]
+            
+            def get_val(col_key, default=""):
+                if col_key and col_key in row_data:
+                    val = row_data[col_key]
+                    return "" if pd.isna(val) else str(val)
+                return default
+
+            ex_musteri = get_val(c_musteri)
+            ex_marka = get_val(c_marka)
+            ex_plaka = get_val(c_plaka)
+            ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
+            ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
+            
+            with st.form("duzenleme_formu
