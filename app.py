@@ -374,6 +374,16 @@ elif menu == "🔍 Müşteri Geçmişi":
                         
                         st.markdown("---")
                         display_df = filtered_cust_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+                        
+                        # --- DIŞA AKTAR (CSV İNDİR) BUTONU ---
+                        csv_data = display_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Bu Raporu CSV Olarak İndir",
+                            data=csv_data,
+                            file_name=f"{selected_cust}_islem_gecmisi.csv",
+                            mime="text/csv",
+                        )
+                        
                         st.dataframe(display_df, use_container_width=True)
                     else:
                         st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
