@@ -10,7 +10,7 @@ st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == "1234":
+        if st.session_state["password"] == "Akalın-5444":
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
