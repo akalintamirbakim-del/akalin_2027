@@ -272,4 +272,7 @@ elif menu == "✏️ Kayıt Düzenle":
             ex_musteri = get_val(c_musteri)
             ex_marka = get_val(c_marka)
             ex_plaka = get_val(c_plaka)
-            ex_ucret = float(row_data.get('Ucret_Clean', 0
+            ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
+            ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
+            
+            with st.form("duzenleme_
