@@ -375,10 +375,10 @@ elif menu == "🔍 Müşteri Geçmişi":
                         st.markdown("---")
                         display_df = filtered_cust_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
                         
-                        # --- DIŞA AKTAR (CSV İNDİR) BUTONU ---
-                        csv_data = display_df.to_csv(index=False).encode('utf-8')
+                        # --- TÜRKÇE KARAKTER UYUMLU CSV İNDİRME ---
+                        csv_data = display_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
                         st.download_button(
-                            label="📥 Bu Raporu CSV Olarak İndir",
+                            label="📥 Bu Raporu CSV Olarak İndir (Türkçe Karakter Uyumlu)",
                             data=csv_data,
                             file_name=f"{selected_cust}_islem_gecmisi.csv",
                             mime="text/csv",
