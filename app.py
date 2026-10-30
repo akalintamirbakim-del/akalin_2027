@@ -9,7 +9,8 @@ st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛
 
 # --- ŞİFRE KONTROLÜ ---
 def check_password():
-    def password_entered():if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
+    def password_entered():
+        if st.session_state["password"] == st.secrets["APP_PASSWORD"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
@@ -28,7 +29,6 @@ def check_password():
 
 if not check_password():
     st.stop()
-
 # --- GOOGLE E-TABLO BAĞLANTISI (OKUMA) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
