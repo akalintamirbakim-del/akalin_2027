@@ -322,6 +322,9 @@ elif menu == "✏️ Kayıt Düzenle":
     if df.empty:
         st.info("Düzenlenecek kayıt bulunamadı.")
     else:
+        # Yapılan işlem sütun adını esnek bulma
+        c_islem = find_col(df, ['yapılan', 'islem', 'işlem', 'parça'])
+        
         duzenle_secenekleri = []
         duzenle_map = {}
         
@@ -348,6 +351,7 @@ elif menu == "✏️ Kayıt Düzenle":
             ex_musteri = get_val(c_musteri)
             ex_marka = get_val(c_marka)
             ex_plaka = get_val(c_plaka)
+            ex_islem = get_val(c_islem)
             ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
             ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
             
@@ -362,7 +366,7 @@ elif menu == "✏️ Kayıt Düzenle":
                     d_tarih = st.date_input("İş Tarihi", datetime.now())
                     d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0)
                     d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0)
-                    d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça")
+                    d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=ex_islem)
                     
                 guncelle_submit = st.form_submit_button("Değişiklikleri Kaydet ve Güncelle")
                 
