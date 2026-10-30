@@ -355,6 +355,15 @@ elif menu == "✏️ Kayıt Düzenle":
             ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
             ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
             
+            # Kaydın kendi orijinal tarihini yakalama
+            ex_tarih = datetime.now().date()
+            if 'Tarih_DT' in row_data and pd.notna(row_data['Tarih_DT']):
+                ex_tarih = row_data['Tarih_DT'].date()
+            elif 'Tarih' in row_data and pd.notna(row_data['Tarih']):
+                parsed_date = pd.to_datetime(row_data['Tarih'], errors='coerce')
+                if pd.notna(parsed_date):
+                    ex_tarih = parsed_date.date()
+            
             with st.form("duzenleme_formu"):
                 duzen_col1, duzen_col2 = st.columns(2)
                 with duzen_col1:
@@ -363,7 +372,7 @@ elif menu == "✏️ Kayıt Düzenle":
                     d_marka = st.text_input("Marka / Model", value=ex_marka)
                     d_is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
                 with duzen_col2:
-                    d_tarih = st.date_input("İş Tarihi", datetime.now())
+                    d_tarih = st.date_input("İş Tarihi", value=ex_tarih)
                     d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0)
                     d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0)
                     d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=ex_islem)
@@ -400,7 +409,6 @@ elif menu == "✏️ Kayıt Düzenle":
                             st.error(f"Güncelleme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
                     except Exception as e:
                         st.error(f"Bağlantı hatası oluştu: {e}")
-
 elif menu == "🔍 Müşteri Geçmişi":
     st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
     
