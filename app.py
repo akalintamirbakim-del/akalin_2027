@@ -322,8 +322,9 @@ elif menu == "✏️ Kayıt Düzenle":
     if df.empty:
         st.info("Düzenlenecek kayıt bulunamadı.")
     else:
-        # Yapılan işlem sütun adını esnek bulma
+        # Yapılan işlem ve iş tipi sütun adlarını esnek bulma
         c_islem = find_col(df, ['yapılan', 'islem', 'işlem', 'parça'])
+        c_istipi = find_col(df, ['tipi', 'istipi', 'is_tipi'])
         
         duzenle_secenekleri = []
         duzenle_map = {}
@@ -355,6 +356,17 @@ elif menu == "✏️ Kayıt Düzenle":
             ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
             ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
             
+            # Kaydın kendi orijinal iş tipini yakalama
+            is_tipi_secenekleri = ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"]
+            ex_istipi_val = get_val(c_istipi)
+            
+            # Kayıttaki değer listede tam eşleşiyorsa onu bul, yoksa varsayılan ilkini seç
+            istipi_index = 0
+            for i, opt in enumerate(is_tipi_secenekleri):
+                if ex_istipi_val.lower() in opt.lower() or opt.lower() in ex_istipi_val.lower():
+                    istipi_index = i
+                    break
+            
             # Kaydın kendi orijinal tarihini yakalama
             ex_tarih = datetime.now().date()
             if 'Tarih_DT' in row_data and pd.notna(row_data['Tarih_DT']):
@@ -370,7 +382,7 @@ elif menu == "✏️ Kayıt Düzenle":
                     d_plaka = st.text_input("Plaka", value=ex_plaka)
                     d_musteri = st.text_input("Müşteri Adı / Firma", value=ex_musteri)
                     d_marka = st.text_input("Marka / Model", value=ex_marka)
-                    d_is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
+                    d_is_tipi = st.selectbox("İş Tipi", is_tipi_secenekleri, index=istipi_index)
                 with duzen_col2:
                     d_tarih = st.date_input("İş Tarihi", value=ex_tarih)
                     d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0)
