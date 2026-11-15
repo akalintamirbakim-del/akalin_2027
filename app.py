@@ -235,7 +235,7 @@ elif menu == "📊 Özet Panel":
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
     
-    # Yıl ve Ay Seçim Filtreleri
+    # Yıl dan Ay Seçim Filtreleri
     f_col1, f_col2, f_col3 = st.columns(3)
     
     years = ["Tümü"]
@@ -272,31 +272,31 @@ elif menu == "📋 İş Listesi & Arama":
     if not filtered_df.empty and 'Tarih_DT' in filtered_df.columns:
         filtered_df = filtered_df.sort_values(by='Tarih_DT', ascending=True)
         
-    # Ana Temiz Tablo Görünümü
-    display_styled_dataframe(filtered_df)
-    
     if not df.empty:
-        st.markdown("---")
-        st.subheader("⚙️ Seçili Kayıt İşlemleri (Düzenle / Sil)")
+        st.info("💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir veya silebilirsiniz.")
         
-        islem_secenekleri = []
-        islem_map = {}
+        # Temiz ve stillendirilmiş tabloyu satır seçimi aktif olacak şekilde gösteriyoruz
+        display_df = get_clean_display_df(filtered_df)
         
-        secim_kaynagi = filtered_df if not filtered_df.empty else df
-        for idx, row in secim_kaynagi.iterrows():
-            tarih_val = str(row.get('Tarih', ''))
-            plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
-            musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
-            islem_val = str(row.get(c_islem, '')) if c_islem else ''
+        event = st.dataframe(
+            display_df,
+            use_container_width=True,
+            selection_mode="single-row",
+            on_select="rerun",
+            key="is_listesi_tablosu"
+        )
+        
+        # Seçilen satırı yakalama
+        selected_rows = event.selection.rows if hasattr(event, 'selection') else []
+        
+        if selected_rows:
+            selected_relative_idx = selected_rows[0]
+            # Filtrelenmiş DataFrame üzerinden gerçek orijinal indeks değerini bulma
+            gercek_idx = filtered_df.index[selected_relative_idx]
+            row_data = df.loc[gercek_idx]
             
-            label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val} | {islem_val[:25]}"
-            islem_secenekleri.append(label)
-            islem_map[label] = (idx, row)
-
-        secilen_islem_kaydi = st.selectbox("İşlem yapmak istediğiniz kaydı listeden seçin:", ["-- Seçiniz --"] + islem_secenekleri)
-
-        if secilen_islem_kaydi != "-- Seçiniz --":
-            gercek_idx, row_data = islem_map[secilen_islem_kaydi]
+            st.markdown("---")
+            st.success(f"📌 **Seçilen Kayıt:** Satır {gercek_idx+1} | Plaka: `{row_data.get(c_plaka, '')}` | Müşteri: `{row_data.get(c_musteri, '')}`")
             
             def get_val(col_key, default=""):
                 if col_key and col_key in row_data:
@@ -327,10 +327,10 @@ elif menu == "📋 İş Listesi & Arama":
                 if pd.notna(parsed_date):
                     ex_tarih = parsed_date.date()
 
-            tab_duzenle, tab_sil = st.tabs(["✏️ Bu Kaydı Güncelle", "🗑️ Bu Kaydı Sil"])
+            tab_duzenle, tab_sil = st.tabs(["✏️ Seçilen Kaydı Güncelle", "🗑️ Seçilen Kaydı Sil"])
             
             with tab_duzenle:
-                with st.form("temiz_duzenleme_formu"):
+                with st.form("tiklanan_duzenleme_formu"):
                     d_kol1, d_kol2 = st.columns(2)
                     with d_kol1:
                         d_plaka = st.text_input("Plaka", value=ex_plaka)
@@ -343,7 +343,7 @@ elif menu == "📋 İş Listesi & Arama":
                         d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0)
                         d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=ex_islem)
                         
-                    guncelle_btn = st.form_submit_button("💾 Değişiklikleri Kaydet")
+                    guncelle_btn = st.form_submit_button("💾 Değişiklikleri Kaydet ve Güncelle")
                     
                     if guncelle_btn:
                         d_kalan = d_ucret - d_alinan
@@ -397,6 +397,10 @@ elif menu == "📋 İş Listesi & Arama":
                             st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
                     except Exception as e:
                         st.error(f"Bağlantı hatası oluştu: {e}")
+        else:
+            st.info("👆 Düzenlemek veya silmek istediğiniz satıra tablonun en solundaki kutucuktan / satıra tıklayarak seçin.")
+    else:
+        st.info("Tabloda henüz kayıt bulunmuyor.")
 
 elif menu == "🔍 Müşteri Geçmişi":
     st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
