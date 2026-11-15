@@ -270,83 +270,84 @@ elif menu == "📋 İş Listesi & Arama":
     # Tarihe göre sıralama: En üstte en eski olacak şekilde (Artan sıralama)
     if not filtered_df.empty and 'Tarih_DT' in filtered_df.columns:
         filtered_df = filtered_df.sort_values(by='Tarih_DT', ascending=True)
-        
-    display_styled_dataframe(filtered_df)
-    
-    # --- HER KAYDIN YANINDA DÜZENLE VE SİL İŞLEMİ ---
-    if not filtered_df.empty:
-        st.markdown("---")
-        st.subheader("🛠️ Kayıt İşlemleri (Düzenle / Sil)")
-        st.info("Aşağıdan işlem yapmak istediğiniz kaydı seçip doğrudan güncelleyebilir veya silebilirsiniz:")
 
-        # Seçim için liste hazırla
-        islem_secenekleri = []
-        islem_map = {}
-        
+    st.markdown("---")
+    st.subheader("📝 Kayıt Listesi, Düzenle ve Sil")
+    st.info("Aşağıdaki listede her satırın yanında bulunan **Düzenle** veya **Sil** butonlarını kullanabilirsiniz:")
+
+    if filtered_df.empty:
+        st.warning("Listelenecek kayıt bulunamadı.")
+    else:
+        # Her bir satırı tek tek listeleyip yanına buton koyuyoruz
         for idx, row in filtered_df.iterrows():
             tarih_val = str(row.get('Tarih', ''))
             plaka_val = str(row.get(c_plaka, '')) if c_plaka else ''
             musteri_val = str(row.get(c_musteri, '')) if c_musteri else ''
             islem_val = str(row.get(c_islem, '')) if c_islem else ''
+            ucret_val = str(row.get(c_ucret, '')) if c_ucret else ''
+            alinan_val = str(row.get(c_alinan, '')) if c_alinan else ''
             
-            label = f"Satır {idx+1} | Tarih: {tarih_val} | Plaka: {plaka_val} | Müşteri: {musteri_val} | {islem_val[:20]}"
-            islem_secenekleri.append(label)
-            islem_map[label] = (idx, row)
-
-        secilen_kayit = st.selectbox("İşlem Yapılacak Kaydı Seçin:", ["-- Seçiniz --"] + islem_secenekleri)
-
-        if secilen_kayit != "-- Seçiniz --":
-            gercek_idx, row_data = islem_map[secilen_kayit]
-            
-            def get_val(col_key, default=""):
-                if col_key and col_key in row_data:
-                    val = row_data[col_key]
-                    return "" if pd.isna(val) else str(val)
-                return default
-
-            ex_musteri = get_val(c_musteri)
-            ex_marka = get_val(c_marka)
-            ex_plaka = get_val(c_plaka)
-            ex_islem = get_val(c_islem)
-            ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
-            ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
-            
-            is_tipi_secenekleri = ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"]
-            ex_istipi_val = get_val(c_istipi)
-            istipi_index = 0
-            for i, opt in enumerate(is_tipi_secenekleri):
-                if ex_istipi_val.lower() in opt.lower() or opt.lower() in ex_istipi_val.lower():
-                    istipi_index = i
-                    break
-            
-            ex_tarih = datetime.now().date()
-            if 'Tarih_DT' in row_data and pd.notna(row_data['Tarih_DT']):
-                ex_tarih = row_data['Tarih_DT'].date()
-            elif 'Tarih' in row_data and pd.notna(row_data['Tarih']):
-                parsed_date = pd.to_datetime(row_data['Tarih'], errors='coerce')
-                if pd.notna(parsed_date):
-                    ex_tarih = parsed_date.date()
-
-            # Butonları yan yana koymak için kolonlar
-            islem_buton_col1, islem_buton_col2 = st.columns(2)
-            
-            with islem_buton_col1:
-                with st.expander("✏️ Bu Kaydı Düzenle (Formu Aç)", expanded=True):
-                    with st.form(f"form_duzenle_{gercek_idx}"):
-                        d_plaka = st.text_input("Plaka", value=ex_plaka)
-                        d_musteri = st.text_input("Müşteri Adı / Firma", value=ex_musteri)
-                        d_marka = st.text_input("Marka / Model", value=ex_marka)
-                        d_is_tipi = st.selectbox("İş Tipi", is_tipi_secenekleri, index=istipi_index)
-                        d_tarih = st.date_input("İş Tarihi", value=ex_tarih)
-                        d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0)
-                        d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0)
-                        d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=ex_islem)
+            # Satır görünüm kartı
+            with st.container():
+                r_col1, r_col2, r_col3 = st.columns([5, 1, 1])
+                with r_col1:
+                    st.markdown(f"**Tarih:** {tarih_val} | **Plaka:** `{plaka_val}` | **Müşteri:** {musteri_val} | **İşlem:** {islem_val[:40]} | **Ücret:** {ucret_val} ₺")
+                with r_col2:
+                    duzenle_tiklandi = st.button("✏️ Düzenle", key=f"btn_duzenle_{idx}")
+                with r_col3:
+                    sil_tiklandi = st.button("🗑️ Sil", key=f"btn_sil_{idx}", type="primary")
+                
+                # Eğer bu satırın 'Düzenle' butonuna basıldıysa form açılır
+                if duzenle_tiklandi:
+                    st.session_state[f"aktif_duzenle_{idx}"] = True
+                
+                if st.session_state.get(f"aktif_duzenle_{idx}", False):
+                    with st.form(f"form_inline_duzenle_{idx}"):
+                        st.markdown(f"### Satır {idx+1} Kaydını Düzenle")
                         
-                        guncelle_submit = st.form_submit_button("💾 Güncellemeyi Kaydet")
+                        def get_val(col_key, default=""):
+                            if col_key and col_key in row:
+                                val = row[col_key]
+                                return "" if pd.isna(val) else str(val)
+                            return default
+
+                        ex_musteri = get_val(c_musteri)
+                        ex_marka = get_val(c_marka)
+                        ex_plaka = get_val(c_plaka)
+                        ex_islem = get_val(c_islem)
+                        ex_ucret = float(row.get('Ucret_Clean', 0.0))
+                        ex_alinan = float(row.get('Alinan_Clean', 0.0))
+                        
+                        is_tipi_secenekleri = ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"]
+                        ex_istipi_val = get_val(c_istipi)
+                        istipi_index = 0
+                        for i, opt in enumerate(is_tipi_secenekleri):
+                            if ex_istipi_val.lower() in opt.lower() or opt.lower() in ex_istipi_val.lower():
+                                istipi_index = i
+                                break
+                        
+                        ex_tarih = datetime.now().date()
+                        if 'Tarih_DT' in row and pd.notna(row['Tarih_DT']):
+                            ex_tarih = row['Tarih_DT'].date()
+                        elif 'Tarih' in row and pd.notna(row['Tarih']):
+                            parsed_date = pd.to_datetime(row['Tarih'], errors='coerce')
+                            if pd.notna(parsed_date):
+                                ex_tarih = parsed_date.date()
+
+                        d_plaka = st.text_input("Plaka", value=ex_plaka, key=f"d_plaka_{idx}")
+                        d_musteri = st.text_input("Müşteri Adı / Firma", value=ex_musteri, key=f"d_musteri_{idx}")
+                        d_marka = st.text_input("Marka / Model", value=ex_marka, key=f"d_marka_{idx}")
+                        d_is_tipi = st.selectbox("İş Tipi", is_tipi_secenekleri, index=istipi_index, key=f"d_tip_{idx}")
+                        d_tarih = st.date_input("İş Tarihi", value=ex_tarih, key=f"d_tarih_{idx}")
+                        d_ucret = st.number_input("Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0, key=f"d_ucret_{idx}")
+                        d_alinan = st.number_input("Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0, key=f"d_alinan_{idx}")
+                        d_yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=ex_islem, key=f"d_islem_{idx}")
+                        
+                        guncelle_submit = st.form_submit_button("💾 Değişiklikleri Kaydet ve Güncelle")
                         
                         if guncelle_submit:
                             d_kalan = d_ucret - d_alinan
-                            sheets_row_index = gercek_idx + 2
+                            sheets_row_index = idx + 2
                             
                             payload = {
                                 "token": st.secrets["API_TOKEN"],
@@ -368,6 +369,7 @@ elif menu == "📋 İş Listesi & Arama":
                                 res_data = response.json()
                                 if res_data.get("status") == "success":
                                     st.success("Kayıt başarıyla güncellendi!")
+                                    st.session_state[f"aktif_duzenle_{idx}"] = False
                                     st.cache_data.clear()
                                     st.rerun()
                                 else:
@@ -375,28 +377,28 @@ elif menu == "📋 İş Listesi & Arama":
                             except Exception as e:
                                 st.error(f"Bağlantı hatası oluştu: {e}")
 
-            with islem_buton_col2:
-                with st.expander("🗑️ Bu Kaydı Sil", expanded=True):
-                    st.warning("Bu işlem seçilen satırı Google E-Tablo'dan kalıcı olarak silecektir.")
-                    if st.button("🚨 Seçilen Kaydı Kalıcı Olarak Sil", type="primary", key=f"sil_btn_{gercek_idx}"):
-                        sheets_row_index = gercek_idx + 2
-                        payload = {
-                            "token": st.secrets["API_TOKEN"],
-                            "action": "delete",
-                            "rowIndex": sheets_row_index
-                        }
-                        
-                        try:
-                            response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
-                            res_data = response.json()
-                            if res_data.get("status") == "success":
-                                st.success("Kayıt başarıyla silindi!")
-                                st.cache_data.clear()
-                                st.rerun()
-                            else:
-                                st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
-                        except Exception as e:
-                            st.error(f"Bağlantı hatası oluştu: {e}")
+                # Eğer bu satırın 'Sil' butonuna basıldıysa
+                if sil_tiklandi:
+                    sheets_row_index = idx + 2
+                    payload = {
+                        "token": st.secrets["API_TOKEN"],
+                        "action": "delete",
+                        "rowIndex": sheets_row_index
+                    }
+                    
+                    try:
+                        response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
+                        res_data = response.json()
+                        if res_data.get("status") == "success":
+                            st.success("Kayıt başarıyla silindi!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                    except Exception as e:
+                        st.error(f"Bağlantı hatası oluştu: {e}")
+                
+                st.markdown("---")
 elif menu == "🔍 Müşteri Geçmişi":
     st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
     
