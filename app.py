@@ -377,7 +377,7 @@ elif menu == "📋 İş Listesi & Arama":
 
             with islem_buton_col2:
                 with st.expander("🗑️ Bu Kaydı Sil", expanded=True):
-                    st.warning("Bu işlem seçilen satırı Google E-Tablo'dan kalıcı olarak sikecektir.")
+                    st.warning("Bu işlem seçilen satırı Google E-Tablo'dan kalıcı olarak silecektir.")
                     if st.button("🚨 Seçilen Kaydı Kalıcı Olarak Sil", type="primary", key=f"sil_btn_{gercek_idx}"):
                         sheets_row_index = gercek_idx + 2
                         payload = {
