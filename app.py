@@ -285,7 +285,6 @@ elif menu == "📋 İş Listesi & Arama":
             duzenle_secenekleri = []
             duzenle_map = {}
             
-            # Filtrelenmiş veya tüm liste üzerinden seçim imkanı
             secim_kaynagi = filtered_df if not filtered_df.empty else df
             for idx, row in secim_kaynagi.iterrows():
                 tarih_val = str(row.get('Tarih', ''))
@@ -414,7 +413,7 @@ elif menu == "📋 İş Listesi & Arama":
                         else:
                             st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
                     except Exception as e:
-                        st.error(f5"Bağlantı hatası oluştu: {e}")
+                        st.error(f"Bağlantı hatası oluştu: {e}")
 
 elif menu == "🔍 Müşteri Geçmişi":
     st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
