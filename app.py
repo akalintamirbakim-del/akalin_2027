@@ -1,9 +1,8 @@
 import pandas as pd
 import streamlit as st
-import requests
 import io
 from datetime import datetime
-from streamlit_gsheets import GSheetsConnection
+from supabase import create_client, Client
 
 st.set_page_config(page_title="Akalın Kamyon Tamir İş Takip", page_icon="🚛", layout="wide")
 
@@ -30,75 +29,72 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- GOOGLE E-TABLO BAĞLANTISI (OKUMA) ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+# --- SUPABASE BAĞLANTISI ---
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
 
 def load_data():
     try:
-        df = conn.read(ttl=2)
-        df.columns = [str(c).strip() for c in df.columns]
+        response = supabase.table("islemler").select("*").order("tarih", desc=False).order("id", desc=False).execute()
+        data = response.data
+        if not data:
+            return pd.DataFrame(columns=[
+                "id", "tarih", "plaka", "musteri", "marka", 
+                "is_tipi", "yapilan_islem", "ucret", "alinan", "kalan"
+            ])
+        df = pd.DataFrame(data)
+        df['Ucret_Clean'] = pd.to_numeric(df['ucret'], errors='coerce').fillna(0.0)
+        df['Alinan_Clean'] = pd.to_numeric(df['alinan'], errors='coerce').fillna(0.0)
+        df['Kalan_Clean'] = pd.to_numeric(df['kalan'], errors='coerce').fillna(0.0)
+        df['Tarih_DT'] = pd.to_datetime(df['tarih'], errors='coerce')
         return df
     except Exception as e:
-        st.error(f"Google E-Tablo'dan veri okunamadı: {e}")
+        st.error(f"Supabase veritabanından veri okunamadı: {e}")
         return pd.DataFrame()
 
 df = load_data()
-
-# Sütun isimlerini esnek yakalama
-def find_col(df, keywords):
-    for col in df.columns:
-        for kw in keywords:
-            if kw.lower() in col.lower():
-                return col
-    return None
-
-c_musteri = find_col(df, ['müşteri', 'firma'])
-c_marka = find_col(df, ['marka', 'model'])
-c_plaka = find_col(df, ['plaka'])
-c_ucret = find_col(df, ['ücret', 'tutar', 'fiyat'])
-c_alinan = find_col(df, ['alınan', 'ödenen', 'tahsil'])
-c_kalan = find_col(df, ['kalan', 'borç', 'bakiye'])
-c_islem = find_col(df, ['yapılan', 'islem', 'işlem', 'parça'])
-c_istipi = find_col(df, ['tipi', 'istipi', 'is_tipi'])
-
-# Temiz para dönüştürücü
-def parse_money(series_name):
-    if not series_name or series_name not in df.columns:
-        return pd.Series(0.0, index=df.index)
-    s = df[series_name].astype(str)
-    s = s.str.replace('₺', '', regex=False).str.replace('TL', '', regex=False).str.replace(' ', '', regex=False)
-    s = s.str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-    return pd.to_numeric(s, errors='coerce').fillna(0.0)
-
-if not df.empty:
-    df['Ucret_Clean'] = parse_money(c_ucret)
-    df['Alinan_Clean'] = parse_money(c_alinan)
-    df['Kalan_Clean'] = parse_money(c_kalan)
-    if 'Tarih' in df.columns:
-        df['Tarih_DT'] = pd.to_datetime(df['Tarih'], errors='coerce')
 
 # --- TABLO GÖRÜNÜMÜ VE RENKLENDİRME FONKSİYONU ---
 def get_clean_display_df(input_df):
     if input_df.empty:
         return input_df
     d_df = input_df.copy()
-    if 'Ucret_Clean' in d_df.columns and 'Kalan_Clean' in d_df.columns:
-        zero_ucret_mask = d_df['Ucret_Clean'] == 0
-        
-        if c_ucret and c_ucret in d_df.columns:
-            d_df[c_ucret] = d_df[c_ucret].astype(object)
-            d_df.loc[zero_ucret_mask, c_ucret] = "Ücret Giriniz"
-            
-        if c_kalan and c_kalan in d_df.columns:
-            d_df[c_kalan] = d_df[c_kalan].astype(object)
-            d_df.loc[zero_ucret_mask, c_kalan] = "Bekleniyor"
-            
-            zero_kalan_mask = (d_df['Kalan_Clean'] == 0) & (~zero_ucret_mask)
-            d_df.loc[zero_kalan_mask, c_kalan] = "Ödendi"
-            
-    return d_df.drop(columns=['Tarih_DT', 'Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean'], errors='ignore')
+    
+    # Görünüm için okunaklı sütun adları
+    rename_map = {
+        "id": "Kayıt No",
+        "tarih": "Tarih",
+        "plaka": "Plaka",
+        "musteri": "Müşteri",
+        "marka": "Marka / Model",
+        "is_tipi": "İş Tipi",
+        "yapilan_islem": "Yapılan İşlem",
+        "ucret": "Ücret",
+        "alinan": "Alınan",
+        "kalan": "Kalan"
+    }
+    
+    zero_ucret_mask = d_df['Ucret_Clean'] == 0
+    d_df['ucret'] = d_df['Ucret_Clean'].astype(object)
+    d_df.loc[zero_ucret_mask, 'ucret'] = "Ücret Giriniz"
+    
+    d_df['kalan'] = d_df['Kalan_Clean'].astype(object)
+    d_df.loc[zero_ucret_mask, 'kalan'] = "Bekleniyor"
+    
+    zero_kalan_mask = (d_df['Kalan_Clean'] == 0) & (~zero_ucret_mask)
+    d_df.loc[zero_kalan_mask, 'kalan'] = "Ödendi"
+    
+    cols_to_show = ["id", "tarih", "plaka", "musteri", "marka", "is_tipi", "yapilan_islem", "ucret", "alinan", "kalan"]
+    existing_cols = [c for c in cols_to_show if c in d_df.columns]
+    d_df = d_df[existing_cols].rename(columns=rename_map)
+    return d_df
 
-def display_styled_dataframe(input_df):
+def display_styled_dataframe(input_df, selectable=False, key=None):
     display_df = get_clean_display_df(input_df)
     
     def color_status(val):
@@ -115,10 +111,23 @@ def display_styled_dataframe(input_df):
     except AttributeError:
         styled = display_df.style.applymap(color_status)
         
-    st.dataframe(styled, use_container_width=True, selection_mode="single-row", on_select="rerun", key="is_listesi_tablosu")
+    if selectable:
+        st.dataframe(styled, use_container_width=True, hide_index=True, selection_mode="single-row", on_select="rerun", key=key)
+    else:
+        st.dataframe(styled, use_container_width=True, hide_index=True)
 
 st.sidebar.title("🚛 Akalın Servis")
-menu = st.sidebar.radio("Menü", ["➕ Yeni İş Ekle", "📊 Özet Panel", "📋 İş Listesi & Arama", "🔍 Müşteri Geçmişi", "💰 Müşteri Borçları"])
+menu = st.sidebar.radio(
+    "Menü", 
+    [
+        "➕ Yeni İş Ekle", 
+        "📊 Özet Panel", 
+        "📋 İş Listesi & Arama", 
+        "🔍 Müşteri Geçmişi", 
+        "💰 Müşteri Borçları",
+        "📥 E-Tablodan Veri Aktar"
+    ]
+)
 
 if menu == "➕ Yeni İş Ekle":
     st.title("➕ Yeni Araç / İş Ekle")
@@ -131,16 +140,17 @@ if menu == "➕ Yeni İş Ekle":
     if "form_yapilan" not in st.session_state: st.session_state["form_yapilan"] = ""
 
     known_records = []
-    if not df.empty and c_musteri and c_plaka:
-        records_df = df[[c_musteri, c_marka, c_plaka]].dropna().drop_duplicates()
+    if not df.empty:
+        records_df = df[['musteri', 'marka', 'plaka']].dropna().drop_duplicates()
         known_records = records_df.to_dict('records')
     
     select_options = ["-- Yeni Kayıt / Manuel Gir --"]
     for r in known_records:
-        m_val = str(r.get(c_musteri, '')).strip()
-        p_val = str(r.get(c_plaka, '')).strip()
-        mk_val = str(r.get(c_marka, '')).strip()
-        select_options.append(f"{p_val} | {m_val} ({mk_val})")
+        m_val = str(r.get('musteri', '')).strip()
+        p_val = str(r.get('plaka', '')).strip()
+        mk_val = str(r.get('marka', '')).strip()
+        if p_val or m_val:
+            select_options.append(f"{p_val} | {m_val} ({mk_val})")
 
     def on_select_change():
         secim = st.session_state["secilen_arac_box"]
@@ -148,10 +158,10 @@ if menu == "➕ Yeni İş Ekle":
             try:
                 idx = select_options.index(secim) - 1
                 record = known_records[idx]
-                st.session_state["form_musteri"] = str(record.get(c_musteri, ''))
-                st.session_state["form_marka"] = str(record.get(c_marka, ''))
-                st.session_state["form_plaka"] = str(record.get(c_plaka, ''))
-            except:
+                st.session_state["form_musteri"] = str(record.get('musteri', ''))
+                st.session_state["form_marka"] = str(record.get('marka', ''))
+                st.session_state["form_plaka"] = str(record.get('plaka', ''))
+            except Exception:
                 pass
         else:
             st.session_state["form_musteri"] = ""
@@ -182,40 +192,33 @@ if menu == "➕ Yeni İş Ekle":
             alinan = st.number_input("Alınan Ödenen (₺)", value=st.session_state["form_alinan"], min_value=0.0, step=100.0)
             yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", value=st.session_state["form_yapilan"])
             
-        submit = st.form_submit_button("Kaydet ve Google E-Tabloya Gönder")
+        submit = st.form_submit_button("💾 Kaydet")
         
         if submit:
-            kalan = ucret - alinan
-            payload = {
-                "token": st.secrets["API_TOKEN"],
-                "Musteri": musteri,
-                "Marka": marka,
-                "Plaka": plaka,
-                "YapilanIslem": yapilan_islem,
-                "Ucret": ucret,
-                "Alinan": alinan,
-                "Kalan": kalan,
-                "Tarih": tarih.strftime('%Y-%m-%d'),
-                "IsTipi": is_tipi
+            kalan = float(ucret) - float(alinan)
+            yeni_kayit = {
+                "tarih": tarih.strftime('%Y-%m-%d'),
+                "plaka": plaka.strip(),
+                "musteri": musteri.strip(),
+                "marka": marka.strip(),
+                "is_tipi": is_tipi,
+                "yapilan_islem": yapilan_islem.strip(),
+                "ucret": float(ucret),
+                "alinan": float(alinan),
+                "kalan": kalan
             }
-            
             try:
-                response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
-                res_data = response.json()
-                if res_data.get("status") == "success":
-                    st.success("İş başarıyla kaydedildi ve Google E-Tablo güncellendi!")
-                    st.cache_data.clear()
-                    st.rerun()
-                else:
-                    st.error(f"Kayıt başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                supabase.table("islemler").insert(yeni_kayit).execute()
+                st.success("✅ İş başarıyla veritabanına kaydedildi!")
+                st.rerun()
             except Exception as e:
-                st.error(f"Bağlantı hatası oluştu: {e}")
+                st.error(f"Kayıt sırasında hata oluştu: {e}")
 
 elif menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
     
     if df.empty:
-        st.info("Google E-Tablonuz şu an boş veya veriler yükleniyor...")
+        st.info("Veritabanında henüz kayıt bulunmuyor.")
     else:
         total_is = len(df)
         total_ciro = df['Ucret_Clean'].sum()
@@ -229,13 +232,12 @@ elif menu == "📊 Özet Panel":
         ozet_col4.metric("Kalan Alacak (Borç)", f"{total_kalan:,.2f} ₺")
         
         st.markdown("---")
-        st.subheader("Son Eklenen İşler")
+        st.subheader("Son Eklenen 10 İş")
         display_styled_dataframe(df.tail(10))
 
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
     
-    # Yıl ve Ay Seçim Filtreleri
     f_col1, f_col2, f_col3 = st.columns(3)
     
     years = ["Tümü"]
@@ -265,20 +267,16 @@ elif menu == "📋 İş Listesi & Arama":
             filtered_df = filtered_df[filtered_df['Tarih_DT'].dt.month == m_num]
             
     if search_term and not filtered_df.empty:
-        mask = filtered_df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
+        search_cols = ['plaka', 'musteri', 'marka', 'yapilan_islem', 'is_tipi']
+        mask = filtered_df[search_cols].astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         filtered_df = filtered_df[mask]
         
-    # Tarihe göre sıralama: En üstte en eski olacak şekilde (Artan sıralama)
-    if not filtered_df.empty and 'Tarih_DT' in filtered_df.columns:
-        filtered_df = filtered_df.sort_values(by='Tarih_DT', ascending=True)
-        
-    if not df.empty:
+    if not filtered_df.empty:
+        filtered_df = filtered_df.sort_values(by=['Tarih_DT', 'id'], ascending=[True, True]).reset_index(drop=True)
         st.info("💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir veya silebilirsiniz.")
         
-        # Renklendirilmiş tabloyu ve seçim özelliğini çağırıyoruz
-        display_styled_dataframe(filtered_df)
+        display_styled_dataframe(filtered_df, selectable=True, key="is_listesi_tablosu")
         
-        # Seçilen satırı yakalamak için st.session_state kontrolü
         selected_rows = []
         if "is_listesi_tablosu" in st.session_state:
             selection_state = st.session_state["is_listesi_tablosu"]
@@ -288,40 +286,30 @@ elif menu == "📋 İş Listesi & Arama":
         if selected_rows:
             selected_relative_idx = selected_rows[0]
             if selected_relative_idx < len(filtered_df):
-                gercek_idx = filtered_df.index[selected_relative_idx]
-                row_data = df.loc[gercek_idx]
+                row_data = filtered_df.iloc[selected_relative_idx]
+                kayit_id = int(row_data['id'])
                 
                 st.markdown("---")
-                st.success(f"📌 **Seçilen Kayıt:** Satır {gercek_idx+1} | Plaka: `{row_data.get(c_plaka, '')}` | Müşteri: `{row_data.get(c_musteri, '')}`")
+                st.success(f"📌 **Seçilen Kayıt No:** #{kayit_id} | Plaka: `{row_data.get('plaka', '')}` | Müşteri: `{row_data.get('musteri', '')}`")
                 
-                def get_val(col_key, default=""):
-                    if col_key and col_key in row_data:
-                        val = row_data[col_key]
-                        return "" if pd.isna(val) else str(val)
-                    return default
-
-                ex_musteri = get_val(c_musteri)
-                ex_marka = get_val(c_marka)
-                ex_plaka = get_val(c_plaka)
-                ex_islem = get_val(c_islem)
+                ex_musteri = str(row_data.get('musteri') or "")
+                ex_marka = str(row_data.get('marka') or "")
+                ex_plaka = str(row_data.get('plaka') or "")
+                ex_islem = str(row_data.get('yapilan_islem') or "")
                 ex_ucret = float(row_data.get('Ucret_Clean', 0.0))
                 ex_alinan = float(row_data.get('Alinan_Clean', 0.0))
                 
                 is_tipi_secenekleri = ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"]
-                ex_istipi_val = get_val(c_istipi)
+                ex_istipi_val = str(row_data.get('is_tipi') or "")
                 istipi_index = 0
                 for i, opt in enumerate(is_tipi_secenekleri):
-                    if ex_istipi_val.lower() in opt.lower() or opt.lower() in ex_istipi_val.lower():
+                    if ex_istipi_val and (ex_istipi_val.lower() in opt.lower() or opt.lower() in ex_istipi_val.lower()):
                         istipi_index = i
                         break
                 
                 ex_tarih = datetime.now().date()
-                if 'Tarih_DT' in row_data and pd.notna(row_data['Tarih_DT']):
+                if pd.notna(row_data.get('Tarih_DT')):
                     ex_tarih = row_data['Tarih_DT'].date()
-                elif 'Tarih' in row_data and pd.notna(row_data['Tarih']):
-                    parsed_date = pd.to_datetime(row_data['Tarih'], errors='coerce')
-                    if pd.notna(parsed_date):
-                        ex_tarih = parsed_date.date()
 
                 tab_duzenle, tab_sil = st.tabs(["✏️ Seçilen Kaydı Güncelle", "🗑️ Seçilen Kaydı Sil"])
                 
@@ -342,144 +330,176 @@ elif menu == "📋 İş Listesi & Arama":
                         guncelle_btn = st.form_submit_button("💾 Değişiklikleri Kaydet ve Güncelle")
                         
                         if guncelle_btn:
-                            d_kalan = d_ucret - d_alinan
-                            sheets_row_index = gercek_idx + 2
-                            
-                            payload = {
-                                "token": st.secrets["API_TOKEN"],
-                                "action": "update",
-                                "rowIndex": sheets_row_index,
-                                "Musteri": d_musteri,
-                                "Marka": d_marka,
-                                "Plaka": d_plaka,
-                                "YapilanIslem": d_yapilan_islem,
-                                "Ucret": d_ucret,
-                                "Alinan": d_alinan,
-                                "Kalan": d_kalan,
-                                "Tarih": d_tarih.strftime('%Y-%m-%d'),
-                                "IsTipi": d_is_tipi
+                            d_kalan = float(d_ucret) - float(d_alinan)
+                            guncel_veri = {
+                                "tarih": d_tarih.strftime('%Y-%m-%d'),
+                                "plaka": d_plaka.strip(),
+                                "musteri": d_musteri.strip(),
+                                "marka": d_marka.strip(),
+                                "is_tipi": d_is_tipi,
+                                "yapilan_islem": d_yapilan_islem.strip(),
+                                "ucret": float(d_ucret),
+                                "alinan": float(d_alinan),
+                                "kalan": d_kalan
                             }
-                            
                             try:
-                                response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
-                                res_data = response.json()
-                                if res_data.get("status") == "success":
-                                    st.success("Kayıt başarıyla güncellendi!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                else:
-                                    st.error(f"Güncelleme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                                supabase.table("islemler").update(guncel_veri).eq("id", kayit_id).execute()
+                                st.success("✅ Kayıt anında güncellendi!")
+                                st.rerun()
                             except Exception as e:
-                                st.error(f"Bağlantı hatası oluştu: {e}")
+                                st.error(f"Güncelleme hatası: {e}")
 
                 with tab_sil:
-                    st.warning(f"Seçilen kayıt (Satır {gercek_idx+2}) Google E-Tablo'dan kalıcı olarak silinecektir.")
+                    st.warning(f"Seçilen kayıt (#{kayit_id} - {ex_plaka}) veritabanından kalıcı olarak silinecektir.")
                     if st.button("🚨 Seçilen Kaydı Kalıcı Olarak Sil", type="primary"):
-                        sheets_row_index = gercek_idx + 2
-                        payload = {
-                            "token": st.secrets["API_TOKEN"],
-                            "action": "delete",
-                            "rowIndex": sheets_row_index
-                        }
-                        
                         try:
-                            response = requests.post(st.secrets["WEB_APP_URL"], json=payload)
-                            res_data = response.json()
-                            if res_data.get("status") == "success":
-                                st.success("Kayıt başarıyla silindi!")
-                                st.cache_data.clear()
-                                st.rerun()
-                            else:
-                                st.error(f"Silme başarısız: {res_data.get('message', 'Bilinmeyen hata')}")
+                            supabase.table("islemler").delete().eq("id", kayit_id).execute()
+                            st.success("🗑️ Kayıt kalıcı olarak silindi!")
+                            st.rerun()
                         except Exception as e:
-                            st.error(f"Bağlantı hatası oluştu: {e}")
+                            st.error(f"Silme hatası: {e}")
         else:
-            st.info("👆 Düzenlemek veya silmek istediğiniz satıra tablonun en solundaki kutucuktan / satıra tıklayarak seçin.")
+            st.info("👆 Düzenlemek veya silmek istediğiniz satıra tablonun en solundaki kutucuktan tıklayarak seçin.")
     else:
-        st.info("Tabloda henüz kayıt bulunmuyor.")
+        st.info("Arama kriterlerinize uygun kayıt bulunamadı.")
 
 elif menu == "🔍 Müşteri Geçmişi":
     st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
     
-    if df.empty or not c_musteri:
-        st.info("Tabloda gösterilecek müşteri verisi bulunamadı.")
+    if df.empty:
+        st.info("Veritabanında henüz müşteri verisi bulunmuyor.")
     else:
-        unique_customers = df[c_musteri].dropna().astype(str).unique().tolist()
+        unique_customers = sorted(df['musteri'].dropna().astype(str).unique().tolist())
+        unique_customers = [c for c in unique_customers if c.strip() != ""]
         unique_customers.insert(0, "-- Müşteri Seçiniz --")
         
         selected_cust = st.selectbox("Rapor Alınacak Müşteriyi Seçin:", unique_customers)
         
         if selected_cust != "-- Müşteri Seçiniz --":
-            if 'Tarih' in df.columns:
-                cust_df = df[df[c_musteri].astype(str) == selected_cust].copy()
+            cust_df = df[df['musteri'].astype(str) == selected_cust].copy()
+            
+            if not cust_df.empty:
+                min_date = cust_df['Tarih_DT'].min()
+                max_date = cust_df['Tarih_DT'].max()
                 
-                if not cust_df.empty:
-                    min_date = cust_df['Tarih_DT'].min()
-                    max_date = cust_df['Tarih_DT'].max()
+                min_date = datetime.now().date() if pd.isna(min_date) else min_date.date()
+                max_date = datetime.now().date() if pd.isna(max_date) else max_date.date()
+                
+                st.markdown("---")
+                tarih_col1, tarih_col2 = st.columns(2)
+                with tarih_col1:
+                    start_date = st.date_input("Başlangıç Tarihi", value=min_date)
+                with tarih_col2:
+                    end_date = st.date_input("Bitiş Tarihi", value=max_date)
                     
-                    if pd.isna(min_date): min_date = datetime.now().date()
-                    else: min_date = min_date.date()
-                        
-                    if pd.isna(max_date): max_date = datetime.now().date()
-                    else: max_date = max_date.date()
+                mask = (cust_df['Tarih_DT'].dt.date >= start_date) & (cust_df['Tarih_DT'].dt.date <= end_date)
+                filtered_cust_df = cust_df[mask].sort_values(by=['Tarih_DT', 'id'], ascending=[True, True])
+                
+                st.markdown("---")
+                st.subheader(f"📊 {selected_cust} İçin Tarih Aralığı Raporu")
+                
+                if not filtered_cust_df.empty:
+                    t_is = len(filtered_cust_df)
+                    t_ciro = filtered_cust_df['Ucret_Clean'].sum()
+                    t_alinan = filtered_cust_df['Alinan_Clean'].sum()
+                    t_kalan = filtered_cust_df['Kalan_Clean'].sum()
+                    
+                    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                    m_col1.metric("Toplam İş", f"{t_is}")
+                    m_col2.metric("Toplam Ücret", f"{t_ciro:,.2f} ₺")
+                    m_col3.metric("Ödenen", f"{t_alinan:,.2f} ₺")
+                    m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
                     
                     st.markdown("---")
-                    tarih_col1, tarih_col2 = st.columns(2)
-                    with tarih_col1:
-                        start_date = st.date_input("Başlangıç Tarihi", value=min_date)
-                    with tarih_col2:
-                        end_date = st.date_input("Bitiş Tarihi", value=max_date)
-                        
-                    mask = (cust_df['Tarih_DT'].dt.date >= start_date) & (cust_df['Tarih_DT'].dt.date <= end_date)
-                    filtered_cust_df = cust_df[mask]
+                    display_df = get_clean_display_df(filtered_cust_df)
                     
-                    if not filtered_cust_df.empty and 'Tarih_DT' in filtered_cust_df.columns:
-                        filtered_cust_df = filtered_cust_df.sort_values(by='Tarih_DT', ascending=True)
-                    
-                    st.markdown("---")
-                    st.subheader(f"📊 {selected_cust} İçin Tarih Aralığı Raporu")
-                    
-                    if not filtered_cust_df.empty:
-                        t_is = len(filtered_cust_df)
-                        t_ciro = filtered_cust_df['Ucret_Clean'].sum()
-                        t_alinan = filtered_cust_df['Alinan_Clean'].sum()
-                        t_kalan = filtered_cust_df['Kalan_Clean'].sum()
-                        
-                        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                        m_col1.metric("Toplam İş", f"{t_is}")
-                        m_col2.metric("Toplam Ücret", f"{t_ciro:,.2f} ₺")
-                        m_col3.metric("Ödenen", f"{t_alinan:,.2f} ₺")
-                        m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
-                        
-                        st.markdown("---")
-                        display_df = get_clean_display_df(filtered_cust_df)
-                        
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            display_df.to_excel(writer, index=False, sheet_name='Müşteri Geçmişi')
-                        excel_data = output.getvalue()
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        display_df.to_excel(writer, index=False, sheet_name='Müşteri Geçmişi')
+                    excel_data = output.getvalue()
 
-                        st.download_button(
-                            label="📥 Bu Raporu Excel (.xlsx) Olarak İndir",
-                            data=excel_data,
-                            file_name=f"{selected_cust}_islem_gecmisi.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-                        
-                        display_styled_dataframe(filtered_cust_df)
-                    else:
-                        st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
+                    st.download_button(
+                        label="📥 Bu Raporu Excel (.xlsx) Olarak İndir",
+                        data=excel_data,
+                        file_name=f"{selected_cust}_islem_gecmisi.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                    
+                    display_styled_dataframe(filtered_cust_df)
                 else:
-                    st.warning("Bu müşteriye ait kayıt bulunamadı.")
-            else:
-                st.error("Tabloda 'Tarih' sütunu bulunamadığı için tarih filtrelemesi yapılamıyor.")
+                    st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
 
 elif menu == "💰 Müşteri Borçları":
     st.title("💰 Müşteri Borç Listesi")
-    if not df.empty and c_musteri:
-        borc_df = df.groupby(c_musteri)[['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean']].sum().reset_index()
-        borc_df.columns = ['Müşteri', 'Ücret', 'Alınan', 'Kalan']
-        borc_df = borc_df[borc_df['Kalan'] > 0].sort_values(by='Kalan', ascending=False)
-        st.dataframe(borc_df, use_container_width=True)
+    if not df.empty:
+        borc_df = df.groupby('musteri')[['Ucret_Clean', 'Alinan_Clean', 'Kalan_Clean']].sum().reset_index()
+        borc_df.columns = ['Müşteri', 'Toplam Ücret', 'Alınan', 'Kalan Borç']
+        borc_df = borc_df[borc_df['Kalan Borç'] > 0].sort_values(by='Kalan Borç', ascending=False)
+        st.dataframe(borc_df, use_container_width=True, hide_index=True)
     else:
-        st.info("Bu listede borçları gösterebilmek için müşteri sütunu bulunamadı.")
+        st.info("Veritabanında henüz kayıt bulunmuyor.")
+
+elif menu == "📥 E-Tablodan Veri Aktar":
+    st.title("📥 Eski Google E-Tablo Verilerini Supabase'e Aktar")
+    st.info("Bu ekranı yalnızca bir kez, eski Google E-Tablonuzdaki kayıtları yeni veritabanına aktarmak için kullanın.")
+    
+    if st.button("🚀 Google E-Tablodaki Kayıtları Oku ve Aktar", type="primary"):
+        try:
+            from streamlit_gsheets import GSheetsConnection
+            conn = st.connection("gsheets", type=GSheetsConnection)
+            old_df = conn.read(ttl=0)
+            old_df.columns = [str(c).strip() for c in old_df.columns]
+            
+            def find_c(df_in, kws):
+                for col in df_in.columns:
+                    for kw in kws:
+                        if kw.lower() in col.lower():
+                            return col
+                return None
+
+            c_m = find_c(old_df, ['müşteri', 'firma'])
+            c_mk = find_c(old_df, ['marka', 'model'])
+            c_p = find_c(old_df, ['plaka'])
+            c_u = find_c(old_df, ['ücret', 'tutar', 'fiyat'])
+            c_a = find_c(old_df, ['alınan', 'ödenen', 'tahsil'])
+            c_k = find_c(old_df, ['kalan', 'borç', 'bakiye'])
+            c_i = find_c(old_df, ['yapılan', 'islem', 'işlem', 'parça'])
+            c_t = find_c(old_df, ['tipi', 'istipi', 'is_tipi'])
+
+            def clean_num(val):
+                if pd.isna(val): return 0.0
+                s = str(val).replace('₺', '').replace('TL', '').replace(' ', '')
+                s = s.replace('.', '').replace(',', '.')
+                try:
+                    return float(s)
+                except Exception:
+                    return 0.0
+
+            records_to_insert = []
+            for _, r in old_df.iterrows():
+                t_raw = pd.to_datetime(r.get('Tarih'), errors='coerce')
+                tarih_str = t_raw.strftime('%Y-%m-%d') if pd.notna(t_raw) else datetime.now().strftime('%Y-%m-%d')
+                
+                u_val = clean_num(r.get(c_u)) if c_u else 0.0
+                a_val = clean_num(r.get(c_a)) if c_a else 0.0
+                k_val = clean_num(r.get(c_k)) if c_k else (u_val - a_val)
+
+                records_to_insert.append({
+                    "tarih": tarih_str,
+                    "plaka": "" if not c_p or pd.isna(r.get(c_p)) else str(r.get(c_p)).strip(),
+                    "musteri": "" if not c_m or pd.isna(r.get(c_m)) else str(r.get(c_m)).strip(),
+                    "marka": "" if not c_mk or pd.isna(r.get(c_mk)) else str(r.get(c_mk)).strip(),
+                    "is_tipi": "" if not c_t or pd.isna(r.get(c_t)) else str(r.get(c_t)).strip(),
+                    "yapilan_islem": "" if not c_i or pd.isna(r.get(c_i)) else str(r.get(c_i)).strip(),
+                    "ucret": u_val,
+                    "alinan": a_val,
+                    "kalan": k_val
+                })
+
+            if records_to_insert:
+                supabase.table("islemler").insert(records_to_insert).execute()
+                st.success(f"🎉 Toplam {len(records_to_insert)} kayıt başarıyla Supabase veritabanına aktarıldı!")
+            else:
+                st.warning("E-Tabloda aktarılacak kayıt bulunamadı.")
+        except Exception as e:
+            st.error(f"Aktarım sırasında hata oluştu: {e}")
