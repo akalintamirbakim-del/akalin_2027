@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import Client, create_client
 
 st.set_page_config(
@@ -171,6 +172,158 @@ def sync_to_google_sheets(source_df: pd.DataFrame) -> tuple[bool, str]:
         return False, f"Yedekleme isteği başarısız: {e}"
 
 
+# --- YAZDIRILABİLİR SERVİS FİŞİ ---
+def render_printable_receipt(row_data: pd.Series) -> None:
+    kayit_no = row_data.get("id", "")
+    tarih_str = "" if pd.isna(row_data.get("tarih")) else str(row_data.get("tarih"))
+    plaka_str = str(row_data.get("plaka") or "-")
+    musteri_str = str(row_data.get("musteri") or "-")
+    marka_str = str(row_data.get("marka") or "-")
+    istipi_str = str(row_data.get("is_tipi") or "-")
+    islem_str = str(row_data.get("yapilan_islem") or "-").replace("\n", "<br>")
+
+    ucret_val = float(row_data.get("Ucret_Clean", 0.0))
+    alinan_val = float(row_data.get("Alinan_Clean", 0.0))
+    kalan_val = float(row_data.get("Kalan_Clean", 0.0))
+
+    ucret_txt = "Ücret Giriniz" if ucret_val == 0 else f"{ucret_val:,.2f} ₺"
+    alinan_txt = f"{alinan_val:,.2f} ₺"
+    kalan_txt = "Bekleniyor" if ucret_val == 0 else ("Ödendi" if kalan_val == 0 else f"{kalan_val:,.2f} ₺")
+
+    html_doc = f"""
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {{
+          font-family: Arial, Helvetica, sans-serif;
+          color: #111;
+          margin: 0;
+          padding: 16px;
+          background: #fff;
+        }}
+        .receipt-box {{
+          max-width: 720px;
+          margin: 0 auto;
+          border: 1.5px solid #222;
+          border-radius: 8px;
+          padding: 20px 24px;
+        }}
+        .header {{
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          border-bottom: 2px solid #222;
+          padding-bottom: 12px;
+          margin-bottom: 16px;
+        }}
+        .title {{
+          font-size: 20px;
+          font-weight: 700;
+        }}
+        .meta {{
+          text-align: right;
+          font-size: 13px;
+          color: #444;
+        }}
+        .info-grid {{
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px 18px;
+          font-size: 14px;
+          margin-bottom: 16px;
+        }}
+        .work-box {{
+          border: 1px solid #ccc;
+          background: #fafafa;
+          border-radius: 6px;
+          padding: 12px;
+          font-size: 14px;
+          line-height: 1.5;
+          margin-bottom: 16px;
+        }}
+        .totals {{
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 14px;
+          margin-bottom: 16px;
+        }}
+        .totals td {{
+          padding: 8px 10px;
+          border-bottom: 1px solid #ddd;
+        }}
+        .totals td.val {{
+          text-align: right;
+          font-weight: 700;
+        }}
+        .print-btn {{
+          background: #1f2937;
+          color: #fff;
+          border: none;
+          padding: 10px 18px;
+          font-size: 14px;
+          border-radius: 6px;
+          cursor: pointer;
+        }}
+        .footer-note {{
+          font-size: 12px;
+          color: #666;
+          margin-top: 10px;
+        }}
+        @media print {{
+          .no-print {{ display: none !important; }}
+          body {{ padding: 0; }}
+          .receipt-box {{ border: none; max-width: 100%; }}
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="no-print" style="max-width:720px; margin:0 auto 12px auto;">
+        <button class="print-btn" onclick="window.print()">🖨️ Fişi Yazdır / PDF Kaydet</button>
+      </div>
+      <div class="receipt-box">
+        <div class="header">
+          <div class="title">🚛 AKALIN KAMYON TAMİR SERVİSİ</div>
+          <div class="meta">
+            <strong>Kayıt No:</strong> #{kayit_no}<br>
+            <strong>Tarih:</strong> {tarih_str}
+          </div>
+        </div>
+        <div class="info-grid">
+          <div><strong>Müşteri / Firma:</strong> {musteri_str}</div>
+          <div><strong>Plaka:</strong> {plaka_str}</div>
+          <div><strong>Marka / Model:</strong> {marka_str}</div>
+          <div><strong>İş Tipi:</strong> {istipi_str}</div>
+        </div>
+        <div class="work-box">
+          <strong>Yapılan İşlem / Değişen Parçalar:</strong><br><br>
+          {islem_str}
+        </div>
+        <table class="totals">
+          <tr>
+            <td>Toplam Ücret</td>
+            <td class="val">{ucret_txt}</td>
+          </tr>
+          <tr>
+            <td>Alınan / Ödenen Tutar</td>
+            <td class="val">{alinan_txt}</td>
+          </tr>
+          <tr>
+            <td>Kalan Bakiye / Durum</td>
+            <td class="val">{kalan_txt}</td>
+          </tr>
+        </table>
+        <div class="footer-note">
+          İş / Tahsilat Bilgilendirme Fişi — Akalın Servis Kayıt Sistemi
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    components.html(html_doc, height=490, scrolling=True)
+
+
 # --- TABLO GÖRÜNÜMÜ VE RENKLENDİRME ---
 def get_clean_display_df(input_df: pd.DataFrame) -> pd.DataFrame:
     if input_df.empty:
@@ -254,7 +407,7 @@ menu = st.sidebar.radio(
         "➕ Yeni İş Ekle",
         "📊 Özet Panel",
         "📋 İş Listesi & Arama",
-        "🔍 Müşteri Geçmişi",
+        "🔍 Müşteri & Plaka Geçmişi",
         "💰 Müşteri Borçları",
     ],
 )
@@ -369,7 +522,7 @@ if menu == "➕ Yeni İş Ekle":
                     st.error(f"Kayıt sırasında hata oluştu: {e}")
 
 # ==========================================
-# 2. ÖZET PANEL & MANUEL YEDEKLEME
+# 2. ÖZET PANEL, UYARI & MANUEL YEDEKLEME
 # ==========================================
 elif menu == "📊 Özet Panel":
     st.title("📊 Tamirhane Yönetim Paneli")
@@ -381,12 +534,22 @@ elif menu == "📊 Özet Panel":
         total_ciro = df["Ucret_Clean"].sum()
         total_alinan = df["Alinan_Clean"].sum()
         total_kalan = df["Kalan_Clean"].sum()
+        ucret_bekleyen_df = df[df["Ucret_Clean"] == 0]
+        ucret_bekleyen_adet = len(ucret_bekleyen_df)
 
-        ozet_col1, ozet_col2, ozet_col3, ozet_col4 = st.columns(4)
+        ozet_col1, ozet_col2, ozet_col3, ozet_col4, ozet_col5 = st.columns(5)
         ozet_col1.metric("Toplam İş / Araç", f"{total_is}")
         ozet_col2.metric("Toplam Ciro", f"{total_ciro:,.2f} ₺")
         ozet_col3.metric("Tahsil Edilen", f"{total_alinan:,.2f} ₺")
         ozet_col4.metric("Kalan Alacak (Borç)", f"{total_kalan:,.2f} ₺")
+        ozet_col5.metric("Ücret Girilmemiş", f"{ucret_bekleyen_adet}")
+
+        if ucret_bekleyen_adet > 0:
+            st.warning(
+                f"⚠️ **Dikkat:** Ücreti henüz girilmemiş **{ucret_bekleyen_adet}** açık iş kaydı bulunuyor."
+            )
+            with st.expander(f"🔴 Ücret Girilmesi Beklenen Kayıtları Gör ({ucret_bekleyen_adet})"):
+                display_styled_dataframe(ucret_bekleyen_df)
 
         st.markdown("---")
         st.subheader("💾 Manuel Yedekleme")
@@ -416,7 +579,7 @@ elif menu == "📊 Özet Panel":
         display_styled_dataframe(df.tail(10))
 
 # ==========================================
-# 3. İŞ LİSTESİ & ARAMA
+# 3. İŞ LİSTESİ, ARAMA & YAZDIRILABİLİR FİŞ
 # ==========================================
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
@@ -481,7 +644,7 @@ elif menu == "📋 İş Listesi & Arama":
         )
         st.caption(f"Gösterilen kayıt sayısı: **{len(filtered_df)}**")
         st.info(
-            "💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir veya silebilirsiniz."
+            "💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir, silebilir veya yazdırılabilir fiş alabilirsiniz."
         )
 
         display_styled_dataframe(filtered_df, selectable=True, key="is_listesi_tablosu")
@@ -527,7 +690,9 @@ elif menu == "📋 İş Listesi & Arama":
                 if pd.notna(row_data.get("Tarih_DT")):
                     ex_tarih = row_data["Tarih_DT"].date()
 
-                tab_duzenle, tab_sil = st.tabs(["✏️ Seçilen Kaydı Güncelle", "🗑️ Seçilen Kaydı Sil"])
+                tab_duzenle, tab_fis, tab_sil = st.tabs(
+                    ["✏️ Seçilen Kaydı Güncelle", "🧾 Yazdırılabilir Fiş / Özet", "🗑️ Seçilen Kaydı Sil"]
+                )
 
                 with tab_duzenle:
                     with st.form(f"tiklanan_duzenleme_formu_{kayit_id}"):
@@ -572,6 +737,9 @@ elif menu == "📋 İş Listesi & Arama":
                             except Exception as e:
                                 st.error(f"Güncelleme hatası: {e}")
 
+                with tab_fis:
+                    render_printable_receipt(row_data)
+
                 with tab_sil:
                     st.warning(
                         f"Seçilen kayıt (#{kayit_id} - {ex_plaka}) veritabanından kalıcı olarak silinecektir."
@@ -586,87 +754,132 @@ elif menu == "📋 İş Listesi & Arama":
                             st.error(f"Silme hatası: {e}")
         else:
             st.info(
-                "👆 Düzenlemek veya silmek istediğiniz satıra tablonun en solundaki kutucuktan tıklayarak seçin."
+                "👆 İşlem yapmak istediğiniz satıra tablonun en solundaki kutucuktan tıklayarak seçin."
             )
     else:
         st.info("Arama kriterlerinize uygun kayıt bulunamadı.")
 
 # ==========================================
-# 4. MÜŞTERİ GEÇMİŞİ
+# 4. MÜŞTERİ & PLAKA GEÇMİŞİ
 # ==========================================
-elif menu == "🔍 Müşteri Geçmişi":
-    st.title("🔍 Müşteri İşlem Geçmişi ve Tarih Aralığı")
+elif menu == "🔍 Müşteri & Plaka Geçmişi":
+    st.title("🔍 Müşteri ve Plaka Bazlı İşlem Geçmişi")
 
     if df.empty:
-        st.info("Veritabanında henüz müşteri verisi bulunmuyor.")
+        st.info("Veritabanında henüz kayıt bulunmuyor.")
     else:
-        unique_customers = sorted(df["musteri"].dropna().astype(str).str.strip().unique().tolist())
-        unique_customers = [c for c in unique_customers if c != ""]
-        unique_customers.insert(0, "-- Müşteri Seçiniz --")
+        gecmis_tab1, gecmis_tab2 = st.tabs(["👤 Müşteri Geçmişi", "🚘 Plaka Bazlı Geçmiş"])
 
-        selected_cust = st.selectbox("Rapor Alınacak Müşteriyi Seçin:", unique_customers)
+        with gecmis_tab1:
+            unique_customers = sorted(df["musteri"].dropna().astype(str).str.strip().unique().tolist())
+            unique_customers = [c for c in unique_customers if c != ""]
+            unique_customers.insert(0, "-- Müşteri Seçiniz --")
 
-        if selected_cust != "-- Müşteri Seçiniz --":
-            cust_df = df[df["musteri"].astype(str).str.strip() == selected_cust].copy()
+            selected_cust = st.selectbox("Rapor Alınacak Müşteriyi Seçin:", unique_customers)
 
-            if not cust_df.empty:
-                min_date = cust_df["Tarih_DT"].min()
-                max_date = cust_df["Tarih_DT"].max()
+            if selected_cust != "-- Müşteri Seçiniz --":
+                cust_df = df[df["musteri"].astype(str).str.strip() == selected_cust].copy()
 
-                today_tr = datetime.now(ZoneInfo("Europe/Istanbul")).date()
-                min_date = today_tr if pd.isna(min_date) else min_date.date()
-                max_date = today_tr if pd.isna(max_date) else max_date.date()
+                if not cust_df.empty:
+                    min_date = cust_df["Tarih_DT"].min()
+                    max_date = cust_df["Tarih_DT"].max()
 
-                st.markdown("---")
-                tarih_col1, tarih_col2 = st.columns(2)
-                with tarih_col1:
-                    start_date = st.date_input("Başlangıç Tarihi", value=min_date)
-                with tarih_col2:
-                    end_date = st.date_input("Bitiş Tarihi", value=max_date)
+                    today_tr = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+                    min_date = today_tr if pd.isna(min_date) else min_date.date()
+                    max_date = today_tr if pd.isna(max_date) else max_date.date()
 
-                if start_date > end_date:
-                    st.error("Başlangıç tarihi bitiş tarihinden büyük olamaz.")
-                else:
-                    mask = (cust_df["Tarih_DT"].dt.date >= start_date) & (
-                        cust_df["Tarih_DT"].dt.date <= end_date
-                    )
-                    filtered_cust_df = cust_df[mask].sort_values(
-                        by=["Tarih_DT", "id"], ascending=[True, True]
+                    st.markdown("---")
+                    tarih_col1, tarih_col2 = st.columns(2)
+                    with tarih_col1:
+                        start_date = st.date_input("Başlangıç Tarihi", value=min_date, key="m_start")
+                    with tarih_col2:
+                        end_date = st.date_input("Bitiş Tarihi", value=max_date, key="m_end")
+
+                    if start_date > end_date:
+                        st.error("Başlangıç tarihi bitiş tarihinden büyük olamaz.")
+                    else:
+                        mask = (cust_df["Tarih_DT"].dt.date >= start_date) & (
+                            cust_df["Tarih_DT"].dt.date <= end_date
+                        )
+                        filtered_cust_df = cust_df[mask].sort_values(
+                            by=["Tarih_DT", "id"], ascending=[True, True]
+                        )
+
+                        st.markdown("---")
+                        st.subheader(f"📊 {selected_cust} İçin Tarih Aralığı Raporu")
+
+                        if not filtered_cust_df.empty:
+                            t_is = len(filtered_cust_df)
+                            t_ciro = filtered_cust_df["Ucret_Clean"].sum()
+                            t_alinan = filtered_cust_df["Alinan_Clean"].sum()
+                            t_kalan = filtered_cust_df["Kalan_Clean"].sum()
+
+                            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                            m_col1.metric("Toplam İş", f"{t_is}")
+                            m_col2.metric("Toplam Ücret", f"{t_ciro:,.2f} ₺")
+                            m_col3.metric("Ödenen", f"{t_alinan:,.2f} ₺")
+                            m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
+
+                            st.markdown("---")
+                            display_df = get_clean_display_df(filtered_cust_df)
+
+                            output = io.BytesIO()
+                            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                                display_df.to_excel(writer, index=False, sheet_name="Müşteri Geçmişi")
+                            excel_data = output.getvalue()
+
+                            st.download_button(
+                                label="📥 Bu Raporu Excel (.xlsx) Olarak İndir",
+                                data=excel_data,
+                                file_name=f"{selected_cust}_islem_gecmisi.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            )
+
+                            display_styled_dataframe(filtered_cust_df)
+                        else:
+                            st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
+
+        with gecmis_tab2:
+            unique_plates = sorted(
+                df["plaka"].dropna().astype(str).str.strip().str.upper().unique().tolist()
+            )
+            unique_plates = [p for p in unique_plates if p != ""]
+            unique_plates.insert(0, "-- Plaka Seçiniz --")
+
+            selected_plate = st.selectbox("Geçmişi Görüntülenecek Plakayı Seçin:", unique_plates)
+
+            if selected_plate != "-- Plaka Seçiniz --":
+                plate_df = df[
+                    df["plaka"].astype(str).str.strip().str.upper() == selected_plate
+                ].sort_values(by=["Tarih_DT", "id"], ascending=[False, False])
+
+                if not plate_df.empty:
+                    p_is = len(plate_df)
+                    p_ciro = plate_df["Ucret_Clean"].sum()
+                    p_alinan = plate_df["Alinan_Clean"].sum()
+                    p_kalan = plate_df["Kalan_Clean"].sum()
+                    marka_bilgi = ", ".join(
+                        sorted(
+                            [
+                                m
+                                for m in plate_df["marka"].dropna().astype(str).str.strip().unique()
+                                if m
+                            ]
+                        )
                     )
 
                     st.markdown("---")
-                    st.subheader(f"📊 {selected_cust} İçin Tarih Aralığı Raporu")
+                    if marka_bilgi:
+                        st.caption(f"Kayıtlı Marka / Model: **{marka_bilgi}**")
 
-                    if not filtered_cust_df.empty:
-                        t_is = len(filtered_cust_df)
-                        t_ciro = filtered_cust_df["Ucret_Clean"].sum()
-                        t_alinan = filtered_cust_df["Alinan_Clean"].sum()
-                        t_kalan = filtered_cust_df["Kalan_Clean"].sum()
+                    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+                    p_col1.metric("Toplam Servis Girişi", f"{p_is}")
+                    p_col2.metric("Toplam İşlem Tutarı", f"{p_ciro:,.2f} ₺")
+                    p_col3.metric("Ödenen", f"{p_alinan:,.2f} ₺")
+                    p_col4.metric("Kalan Borç", f"{p_kalan:,.2f} ₺")
 
-                        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                        m_col1.metric("Toplam İş", f"{t_is}")
-                        m_col2.metric("Toplam Ücret", f"{t_ciro:,.2f} ₺")
-                        m_col3.metric("Ödenen", f"{t_alinan:,.2f} ₺")
-                        m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
-
-                        st.markdown("---")
-                        display_df = get_clean_display_df(filtered_cust_df)
-
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                            display_df.to_excel(writer, index=False, sheet_name="Müşteri Geçmişi")
-                        excel_data = output.getvalue()
-
-                        st.download_button(
-                            label="📥 Bu Raporu Excel (.xlsx) Olarak İndir",
-                            data=excel_data,
-                            file_name=f"{selected_cust}_islem_gecmisi.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        )
-
-                        display_styled_dataframe(filtered_cust_df)
-                    else:
-                        st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
+                    st.markdown("---")
+                    display_styled_dataframe(plate_df)
 
 # ==========================================
 # 5. MÜŞTERİ BORÇLARI & HIZLI TAHSİLAT
