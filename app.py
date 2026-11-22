@@ -14,24 +14,31 @@ st.set_page_config(
 )
 
 
-# --- ŞİFRE KONTROLÜ ---
+# --- KULLANICI ADI & ŞİFRE KONTROLÜ ---
 def check_password() -> bool:
-    def password_entered():
-        if st.session_state.get("password") == st.secrets.get("APP_PASSWORD"):
+    expected_user = str(st.secrets.get("APP_USERNAME", "admin")).strip().lower()
+    expected_pass = str(st.secrets.get("APP_PASSWORD", ""))
+
+    def credentials_entered():
+        entered_user = str(st.session_state.get("username", "")).strip().lower()
+        entered_pass = str(st.session_state.get("password", ""))
+        if entered_user == expected_user and entered_pass == expected_pass:
             st.session_state["password_correct"] = True
             st.session_state.pop("password", None)
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        st.subheader("🔒 Lütfen Giriş Şifresini Girin")
-        st.text_input("Şifre", type="password", on_change=password_entered, key="password")
-        return False
-    if not st.session_state["password_correct"]:
-        st.text_input("Şifre", type="password", on_change=password_entered, key="password")
-        st.error("😕 Şifre yanlış. Lütfen tekrar deneyin.")
-        return False
-    return True
+    if st.session_state.get("password_correct"):
+        return True
+
+    st.subheader("🔒 Lütfen Giriş Yapın")
+    st.text_input("Kullanıcı Adı", key="username")
+    st.text_input("Şifre", type="password", on_change=credentials_entered, key="password")
+
+    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        st.error("😕 Kullanıcı adı veya şifre yanlış. Lütfen tekrar deneyin.")
+
+    return False
 
 
 if not check_password():
