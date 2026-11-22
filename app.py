@@ -46,6 +46,7 @@ def check_password() -> bool:
 
     return False
 
+
 if not check_password():
     st.stop()
 
@@ -460,6 +461,15 @@ if menu == "➕ Yeni İş Ekle":
         if k not in st.session_state:
             st.session_state[k] = v
 
+    if st.session_state.pop("reset_new_job_form", False):
+        for k, v in defaults.items():
+            st.session_state[k] = v
+        st.session_state["secilen_arac_box"] = "-- Yeni Kayıt / Manuel Gir --"
+        st.session_state["kayit_basarili_bildirim"] = True
+
+    if st.session_state.pop("kayit_basarili_bildirim", False):
+        st.success("✅ İş başarıyla veritabanına kaydedildi!")
+
     known_records = []
     if not df.empty:
         records_df = df[["musteri", "marka", "plaka"]].copy()
@@ -508,9 +518,7 @@ if menu == "➕ Yeni İş Ekle":
         with col_clr:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             if st.button("🧹 Temizle", use_container_width=True):
-                for k, v in defaults.items():
-                    st.session_state[k] = v
-                st.session_state["secilen_arac_box"] = "-- Yeni Kayıt / Manuel Gir --"
+                st.session_state["reset_new_job_form"] = True
                 st.rerun()
 
     preview_ucret = float(st.session_state.get("form_ucret", 0.0) or 0.0)
@@ -584,9 +592,7 @@ if menu == "➕ Yeni İş Ekle":
                 }
                 try:
                     supabase.table("islemler").insert(yeni_kayit).execute()
-                    for k, v in defaults.items():
-                        st.session_state[k] = v
-                    st.success("✅ İş başarıyla veritabanına kaydedildi!")
+                    st.session_state["reset_new_job_form"] = True
                     st.rerun()
                 except Exception as e:
                     st.error(f"Kayıt sırasında hata oluştu: {e}")
