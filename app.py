@@ -19,27 +19,32 @@ def check_password() -> bool:
     expected_user = str(st.secrets.get("APP_USERNAME", "admin")).strip().lower()
     expected_pass = str(st.secrets.get("APP_PASSWORD", ""))
 
-    def credentials_entered():
-        entered_user = str(st.session_state.get("username", "")).strip().lower()
-        entered_pass = str(st.session_state.get("password", ""))
-        if entered_user == expected_user and entered_pass == expected_pass:
-            st.session_state["password_correct"] = True
-            st.session_state.pop("password", None)
-        else:
-            st.session_state["password_correct"] = False
-
     if st.session_state.get("password_correct"):
         return True
 
     st.subheader("🔒 Lütfen Giriş Yapın")
-    st.text_input("Kullanıcı Adı", key="username")
-    st.text_input("Şifre", type="password", on_change=credentials_entered, key="password")
+    with st.form("login_form"):
+        entered_user = st.text_input(
+            "Kullanıcı Adı",
+            autocomplete="username",
+            key="login_username_input",
+        )
+        entered_pass = st.text_input(
+            "Şifre",
+            type="password",
+            autocomplete="current-password",
+            key="login_password_input",
+        )
+        submitted = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
 
-    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-        st.error("😕 Kullanıcı adı veya şifre yanlış. Lütfen tekrar deneyin.")
+    if submitted:
+        if entered_user.strip().lower() == expected_user and entered_pass == expected_pass:
+            st.session_state["password_correct"] = True
+            st.rerun()
+        else:
+            st.error("😕 Kullanıcı adı veya şifre yanlış. Lütfen tekrar deneyin.")
 
     return False
-
 
 if not check_password():
     st.stop()
