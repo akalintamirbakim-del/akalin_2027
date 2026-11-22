@@ -1,5 +1,6 @@
 import io
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
@@ -337,7 +338,7 @@ if menu == "➕ Yeni İş Ekle":
             marka = st.text_input("Marka / Model", key="form_marka")
             is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
         with yeni_col2:
-            tarih = st.date_input("İş Tarihi", datetime.now().date())
+            tarih = st.date_input("İş Tarihi", datetime.now(ZoneInfo("Europe/Istanbul")).date())
             ucret = st.number_input("Toplam Ücret (₺)", key="form_ucret", min_value=0.0, step=100.0)
             alinan = st.number_input("Alınan Ödenen (₺)", key="form_alinan", min_value=0.0, step=100.0)
             yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", key="form_yapilan")
@@ -392,11 +393,12 @@ elif menu == "📊 Özet Panel":
         yedek_col1, yedek_col2 = st.columns(2)
         with yedek_col1:
             excel_bytes = build_excel_backup(df)
-            stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+            tr_simdi = datetime.now(ZoneInfo("Europe/Istanbul"))
+            tarih_etiketi = tr_simdi.strftime("%d-%m-%Y_%H-%M")
             st.download_button(
                 label="📥 Tüm Verileri Excel (.xlsx) Yedek İndir",
                 data=excel_bytes,
-                file_name=f"akalin_servis_yedek_{stamp}.xlsx",
+                file_name=f"akalin_servis_yedek_{tarih_etiketi}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
@@ -521,7 +523,7 @@ elif menu == "📋 İş Listesi & Arama":
                         istipi_index = i
                         break
 
-                ex_tarih = datetime.now().date()
+                ex_tarih = datetime.now(ZoneInfo("Europe/Istanbul")).date()
                 if pd.notna(row_data.get("Tarih_DT")):
                     ex_tarih = row_data["Tarih_DT"].date()
 
@@ -611,8 +613,9 @@ elif menu == "🔍 Müşteri Geçmişi":
                 min_date = cust_df["Tarih_DT"].min()
                 max_date = cust_df["Tarih_DT"].max()
 
-                min_date = datetime.now().date() if pd.isna(min_date) else min_date.date()
-                max_date = datetime.now().date() if pd.isna(max_date) else max_date.date()
+                today_tr = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+                min_date = today_tr if pd.isna(min_date) else min_date.date()
+                max_date = today_tr if pd.isna(max_date) else max_date.date()
 
                 st.markdown("---")
                 tarih_col1, tarih_col2 = st.columns(2)
@@ -685,65 +688,4 @@ elif menu == "💰 Müşteri Borçları":
         )
 
         if not borc_df.empty:
-            st.metric("Toplam Açık Müşteri Borcu", f"{borc_df['Kalan_Clean'].sum():,.2f} ₺")
-
-            formatted_borc = pd.DataFrame(
-                {
-                    "Müşteri": borc_df["musteri"],
-                    "Toplam Ücret": borc_df["Ucret_Clean"].map(lambda x: f"{x:,.2f} ₺"),
-                    "Alınan": borc_df["Alinan_Clean"].map(lambda x: f"{x:,.2f} ₺"),
-                    "Kalan Borç": borc_df["Kalan_Clean"].map(lambda x: f"{x:,.2f} ₺"),
-                }
-            )
-            st.dataframe(formatted_borc, use_container_width=True, hide_index=True)
-
-            st.markdown("---")
-            st.subheader("💳 Hızlı Tahsilat / Ödeme Ekle")
-
-            secili_borclu = st.selectbox(
-                "Tahsilat Yapılacak Müşteriyi Seçin:", borc_df["musteri"].tolist()
-            )
-            cust_debt_rows = temp_df[
-                (temp_df["musteri"] == secili_borclu) & (temp_df["Kalan_Clean"] > 0)
-            ].sort_values(by=["Tarih_DT", "id"], ascending=[True, True])
-
-            if not cust_debt_rows.empty:
-                target_row = cust_debt_rows.iloc[0]
-                target_id = int(target_row["id"])
-                cur_ucret = float(target_row["Ucret_Clean"])
-                cur_alinan = float(target_row["Alinan_Clean"])
-                cur_kalan = float(target_row["Kalan_Clean"])
-
-                st.info(
-                    f"Hedef Kayıt **#{target_id}** | Plaka: `{target_row.get('plaka', '')}` | "
-                    f"Tarih: `{target_row.get('tarih', '')}` | Kalan Borç: `{cur_kalan:,.2f} ₺`"
-                )
-
-                with st.form("hizli_tahsilat_formu"):
-                    tahsilat_tutari = st.number_input(
-                        "Alınan Tahsilat Tutarı (₺)",
-                        min_value=0.0,
-                        max_value=cur_kalan,
-                        value=0.0,
-                        step=100.0,
-                    )
-                    if st.form_submit_button("✅ Tahsilatı Kaydet"):
-                        if tahsilat_tutari <= 0:
-                            st.warning("Lütfen 0'dan büyük bir tutar girin.")
-                        else:
-                            yeni_alinan = cur_alinan + float(tahsilat_tutari)
-                            yeni_kalan = max(0.0, cur_ucret - yeni_alinan)
-                            try:
-                                supabase.table("islemler").update(
-                                    {"alinan": yeni_alinan, "kalan": yeni_kalan}
-                                ).eq("id", target_id).execute()
-                                st.success(
-                                    f"✅ {tahsilat_tutari:,.2f} ₺ tahsilat #{target_id} numaralı kayda işlendi!"
-                                )
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Tahsilat kaydedilirken hata oluştu: {e}")
-        else:
-            st.success("Borcu bulunan müşteri kaydı görünmüyor.")
-    else:
-        st.info("Veritabanında henüz kayıt bulunmuyor.")
+            st.metric("Toplam Açık Müşteri Borcu", f"{borc_df['Kalan_Clean'].
