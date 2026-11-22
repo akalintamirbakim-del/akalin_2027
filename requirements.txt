@@ -1,4 +1,6 @@
 streamlit
 pandas
-st-gsheets-connection
+requests
 openpyxl
+st-gsheets-connection
+supabase
