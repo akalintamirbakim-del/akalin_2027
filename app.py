@@ -57,7 +57,6 @@ def parse_money(frame: pd.DataFrame, col_name: str | None) -> pd.Series:
         .str.replace("\xa0", "", regex=False)
         .str.replace(" ", "", regex=False)
     )
-    # Hem "1.250,50" hem "1250.50" formatlarını destekle
     has_comma = s.str.contains(",", regex=False)
     s_comma = s[has_comma].str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
     s_dot = s[~has_comma]
@@ -101,7 +100,6 @@ def load_data() -> pd.DataFrame:
             return pd.DataFrame()
         loaded = loaded.copy()
         loaded.columns = [str(c).strip() for c in loaded.columns]
-        # Başlık satırı 1. satır kabul edilerek veri satırları 2. satırdan başlar
         loaded["_SheetRow"] = loaded.index + 2
         return loaded
     except Exception as e:
@@ -128,6 +126,17 @@ if not df.empty:
     if c_tarih:
         df["Tarih_DT"] = pd.to_datetime(df[c_tarih], errors="coerce")
 
+    def get_row_status(row: pd.Series) -> str:
+        u_val = float(row.get("Ucret_Clean", 0.0))
+        k_val = float(row.get("Kalan_Clean", 0.0))
+        if u_val == 0:
+            return "Ücret Giriniz"
+        if k_val == 0:
+            return "Ödendi"
+        return "Bekleniyor"
+
+    df["Durum_Etiketi"] = df.apply(get_row_status, axis=1)
+
 
 # --- TABLO GÖRÜNÜMÜ VE RENKLENDİRME ---
 def get_clean_display_df(input_df: pd.DataFrame) -> pd.DataFrame:
@@ -148,11 +157,13 @@ def get_clean_display_df(input_df: pd.DataFrame) -> pd.DataFrame:
             zero_kalan_mask = (d_df["Kalan_Clean"] == 0) & (~zero_ucret_mask)
             d_df.loc[zero_kalan_mask, c_kalan] = "Ödendi"
 
-    drop_cols = ["_SheetRow", "Tarih_DT", "Ucret_Clean", "Alinan_Clean", "Kalan_Clean"]
+    drop_cols = ["_SheetRow", "Tarih_DT", "Ucret_Clean", "Alinan_Clean", "Kalan_Clean", "Durum_Etiketi"]
     return d_df.drop(columns=drop_cols, errors="ignore")
 
 
-def display_styled_dataframe(input_df: pd.DataFrame, table_key: str = "is_listesi_tablosu", selectable: bool = True):
+def display_styled_dataframe(
+    input_df: pd.DataFrame, table_key: str = "is_listesi_tablosu", selectable: bool = True
+):
     display_df = get_clean_display_df(input_df)
 
     def color_status(val):
@@ -342,7 +353,7 @@ elif menu == "📋 İş Listesi & Arama":
     if df.empty:
         st.info("Tabloda henüz kayıt bulunmuyor.")
     else:
-        f_col1, f_col2, f_col3 = st.columns(3)
+        f_col1, f_col2, f_col3, f_col4 = st.columns(4)
 
         years = ["Tümü"]
         if "Tarih_DT" in df.columns:
@@ -365,11 +376,15 @@ elif menu == "📋 İş Listesi & Arama":
             "Aralık": 12,
         }
 
+        status_options = ["Tümü", "Ücret Giriniz", "Bekleniyor", "Ödendi"]
+
         with f_col1:
             selected_year = st.selectbox("📅 Yıl Seçin", years)
         with f_col2:
             selected_month_name = st.selectbox("🗓️ Ay Seçin", list(months.keys()))
         with f_col3:
+            selected_status = st.selectbox("🏷️ Ödeme Durumu", status_options)
+        with f_col4:
             search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", "").strip()
 
         filtered_df = df.copy()
@@ -379,6 +394,9 @@ elif menu == "📋 İş Listesi & Arama":
             if selected_month_name != "Tümü":
                 m_num = months[selected_month_name]
                 filtered_df = filtered_df[filtered_df["Tarih_DT"].dt.month == m_num]
+
+        if selected_status != "Tümü" and "Durum_Etiketi" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Durum_Etiketi"] == selected_status]
 
         if search_term and not filtered_df.empty:
             searchable_cols = [
@@ -398,6 +416,7 @@ elif menu == "📋 İş Listesi & Arama":
         if not filtered_df.empty and "Tarih_DT" in filtered_df.columns:
             filtered_df = filtered_df.sort_values(by="Tarih_DT", ascending=True, na_position="last")
 
+        st.caption(f"Gösterilen kayıt sayısı: **{len(filtered_df)}**")
         st.info("💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir veya silebilirsiniz.")
 
         display_styled_dataframe(filtered_df, table_key="is_listesi_tablosu", selectable=True)
@@ -430,7 +449,9 @@ elif menu == "📋 İş Listesi & Arama":
                 ex_alinan = float(row_data.get("Alinan_Clean", 0.0))
 
                 st.markdown("---")
-                st.success(f"📌 **Seçilen Kayıt:** E-Tablo Satır `{sheets_row_index}` | Plaka: `{ex_plaka}` | Müşteri: `{ex_musteri}`")
+                st.success(
+                    f"📌 **Seçilen Kayıt:** E-Tablo Satır `{sheets_row_index}` | Plaka: `{ex_plaka}` | Müşteri: `{ex_musteri}`"
+                )
 
                 is_tipi_secenekleri = ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"]
                 ex_istipi_val = get_val(c_istipi)
@@ -626,6 +647,85 @@ elif menu == "💰 Müşteri Borçları":
                 }
             )
             st.dataframe(formatted_borc, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.subheader("💳 Hızlı Tahsilat / Ödeme Ekle")
+
+            debtor_list = borc_df[c_musteri].tolist()
+            secili_borclu = st.selectbox("Tahsilat Yapılacak Müşteriyi Seçin:", debtor_list)
+
+            cust_debt_rows = temp_df[
+                (temp_df[c_musteri] == secili_borclu) & (temp_df["Kalan_Clean"] > 0)
+            ].copy()
+
+            if "Tarih_DT" in cust_debt_rows.columns:
+                cust_debt_rows = cust_debt_rows.sort_values(by="Tarih_DT", ascending=True, na_position="last")
+
+            if not cust_debt_rows.empty:
+                target_row = cust_debt_rows.iloc[0]
+                target_sheet_row = int(target_row.get("_SheetRow", target_row.name + 2))
+                cur_ucret = float(target_row.get("Ucret_Clean", 0.0))
+                cur_alinan = float(target_row.get("Alinan_Clean", 0.0))
+                cur_kalan = float(target_row.get("Kalan_Clean", 0.0))
+                cur_plaka = str(target_row.get(c_plaka, "") if c_plaka and c_plaka in target_row.index else "")
+                cur_marka = str(target_row.get(c_marka, "") if c_marka and c_marka in target_row.index else "")
+                cur_islem = str(target_row.get(c_islem, "") if c_islem and c_islem in target_row.index else "")
+                cur_istipi = str(
+                    target_row.get(c_istipi, "İşçilik (İ)")
+                    if c_istipi and c_istipi in target_row.index
+                    else "İşçilik (İ)"
+                )
+
+                cur_tarih_str = datetime.now().strftime("%Y-%m-%d")
+                if "Tarih_DT" in target_row.index and pd.notna(target_row["Tarih_DT"]):
+                    cur_tarih_str = target_row["Tarih_DT"].strftime("%Y-%m-%d")
+                elif c_tarih and c_tarih in target_row.index and pd.notna(target_row[c_tarih]):
+                    parsed_dt = pd.to_datetime(target_row[c_tarih], errors="coerce")
+                    if pd.notna(parsed_dt):
+                        cur_tarih_str = parsed_dt.strftime("%Y-%m-%d")
+
+                st.info(
+                    f"Hedef Kayıt (E-Tablo Satır `{target_sheet_row}`): Plaka `{cur_plaka}` | "
+                    f"Ücret: `{cur_ucret:,.2f} ₺` | Alınan: `{cur_alinan:,.2f} ₺` | Kalan: `{cur_kalan:,.2f} ₺`"
+                )
+
+                with st.form("hizli_tahsilat_formu"):
+                    tahsilat_tutari = st.number_input(
+                        "Alınan Tahsilat Tutarı (₺)",
+                        min_value=0.0,
+                        max_value=cur_kalan if cur_kalan > 0 else None,
+                        value=0.0,
+                        step=100.0,
+                    )
+                    tahsilat_onay = st.form_submit_button("✅ Tahsilatı Kaydet")
+
+                    if tahsilat_onay:
+                        if tahsilat_tutari <= 0:
+                            st.warning("Lütfen 0'dan büyük bir tahsilat tutarı girin.")
+                        else:
+                            yeni_alinan = cur_alinan + tahsilat_tutari
+                            yeni_kalan = max(0.0, cur_ucret - yeni_alinan)
+                            payload = {
+                                "token": st.secrets["API_TOKEN"],
+                                "action": "update",
+                                "rowIndex": target_sheet_row,
+                                "Musteri": secili_borclu,
+                                "Marka": cur_marka,
+                                "Plaka": cur_plaka,
+                                "YapilanIslem": cur_islem,
+                                "Ucret": float(cur_ucret),
+                                "Alinan": float(yeni_alinan),
+                                "Kalan": float(yeni_kalan),
+                                "Tarih": cur_tarih_str,
+                                "IsTipi": cur_istipi,
+                            }
+                            ok, msg = post_to_sheet(payload)
+                            if ok:
+                                st.success(f"{tahsilat_tutari:,.2f} ₺ tahsilat kaydedildi!")
+                                refresh_app_data()
+                                st.rerun()
+                            else:
+                                st.error(f"Tahsilat kaydedilemedi: {msg}")
         else:
             st.success("Borcu bulunan müşteri kaydı görünmüyor.")
     else:
