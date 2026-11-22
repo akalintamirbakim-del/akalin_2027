@@ -688,4 +688,65 @@ elif menu == "💰 Müşteri Borçları":
         )
 
         if not borc_df.empty:
-            st.metric("Toplam Açık Müşteri Borcu", f"{borc_df['Kalan_Clean'].
+            st.metric("Toplam Açık Müşteri Borcu", f"{borc_df['Kalan_Clean'].sum():,.2f} ₺")
+
+            formatted_borc = pd.DataFrame(
+                {
+                    "Müşteri": borc_df["musteri"],
+                    "Toplam Ücret": borc_df["Ucret_Clean"].map(lambda x: f"{x:,.2f} ₺"),
+                    "Alınan": borc_df["Alinan_Clean"].map(lambda x: f"{x:,.2f} ₺"),
+                    "Kalan Borç": borc_df["Kalan_Clean"].map(lambda x: f"{x:,.2f} ₺"),
+                }
+            )
+            st.dataframe(formatted_borc, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+            st.subheader("💳 Hızlı Tahsilat / Ödeme Ekle")
+
+            secili_borclu = st.selectbox(
+                "Tahsilat Yapılacak Müşteriyi Seçin:", borc_df["musteri"].tolist()
+            )
+            cust_debt_rows = temp_df[
+                (temp_df["musteri"] == secili_borclu) & (temp_df["Kalan_Clean"] > 0)
+            ].sort_values(by=["Tarih_DT", "id"], ascending=[True, True])
+
+            if not cust_debt_rows.empty:
+                target_row = cust_debt_rows.iloc[0]
+                target_id = int(target_row["id"])
+                cur_ucret = float(target_row["Ucret_Clean"])
+                cur_alinan = float(target_row["Alinan_Clean"])
+                cur_kalan = float(target_row["Kalan_Clean"])
+
+                st.info(
+                    f"Hedef Kayıt **#{target_id}** | Plaka: `{target_row.get('plaka', '')}` | "
+                    f"Tarih: `{target_row.get('tarih', '')}` | Kalan Borç: `{cur_kalan:,.2f} ₺`"
+                )
+
+                with st.form("hizli_tahsilat_formu"):
+                    tahsilat_tutari = st.number_input(
+                        "Alınan Tahsilat Tutarı (₺)",
+                        min_value=0.0,
+                        max_value=cur_kalan,
+                        value=0.0,
+                        step=100.0,
+                    )
+                    if st.form_submit_button("✅ Tahsilatı Kaydet"):
+                        if tahsilat_tutari <= 0:
+                            st.warning("Lütfen 0'dan büyük bir tutar girin.")
+                        else:
+                            yeni_alinan = cur_alinan + float(tahsilat_tutari)
+                            yeni_kalan = max(0.0, cur_ucret - yeni_alinan)
+                            try:
+                                supabase.table("islemler").update(
+                                    {"alinan": yeni_alinan, "kalan": yeni_kalan}
+                                ).eq("id", target_id).execute()
+                                st.success(
+                                    f"✅ {tahsilat_tutari:,.2f} ₺ tahsilat #{target_id} numaralı kayda işlendi!"
+                                )
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Tahsilat kaydedilirken hata oluştu: {e}")
+        else:
+            st.success("Borcu bulunan müşteri kaydı görünmüyor.")
+    else:
+        st.info("Veritabanında henüz kayıt bulunmuyor.")
