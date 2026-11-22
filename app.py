@@ -38,6 +38,21 @@ if not check_password():
     st.stop()
 
 
+# --- SAYI / PARA BİÇİMLENDİRME ---
+def fmt_num(val: float) -> str:
+    num = float(val or 0.0)
+    if num.is_integer():
+        return f"{int(num):,}".replace(",", ".")
+    formatted = f"{num:,.2f}".rstrip("0").rstrip(".")
+    parts = formatted.split(".")
+    int_part = parts[0].replace(",", ".")
+    return f"{int_part},{parts[1]}" if len(parts) > 1 else int_part
+
+
+def fmt_tl(val: float) -> str:
+    return f"{fmt_num(val)} ₺"
+
+
 # --- SUPABASE BAĞLANTISI ---
 @st.cache_resource
 def init_supabase() -> Client:
@@ -186,9 +201,9 @@ def render_printable_receipt(row_data: pd.Series) -> None:
     alinan_val = float(row_data.get("Alinan_Clean", 0.0))
     kalan_val = float(row_data.get("Kalan_Clean", 0.0))
 
-    ucret_txt = "Ücret Giriniz" if ucret_val == 0 else f"{ucret_val:,.2f} ₺"
-    alinan_txt = f"{alinan_val:,.2f} ₺"
-    kalan_txt = "Bekleniyor" if ucret_val == 0 else ("Ödendi" if kalan_val == 0 else f"{kalan_val:,.2f} ₺")
+    ucret_txt = "Ücret Giriniz" if ucret_val == 0 else fmt_tl(ucret_val)
+    alinan_txt = fmt_tl(alinan_val)
+    kalan_txt = "Bekleniyor" if ucret_val == 0 else ("Ödendi" if kalan_val == 0 else fmt_tl(kalan_val))
 
     html_doc = f"""
     <!DOCTYPE html>
@@ -344,13 +359,15 @@ def get_clean_display_df(input_df: pd.DataFrame) -> pd.DataFrame:
     }
 
     zero_ucret_mask = d_df["Ucret_Clean"] == 0
-    d_df["ucret"] = d_df["Ucret_Clean"].astype(object)
+    zero_kalan_mask = (d_df["Kalan_Clean"] == 0) & (~zero_ucret_mask)
+
+    d_df["ucret"] = d_df["Ucret_Clean"].map(fmt_num).astype(object)
     d_df.loc[zero_ucret_mask, "ucret"] = "Ücret Giriniz"
 
-    d_df["kalan"] = d_df["Kalan_Clean"].astype(object)
-    d_df.loc[zero_ucret_mask, "kalan"] = "Bekleniyor"
+    d_df["alinan"] = d_df["Alinan_Clean"].map(fmt_num).astype(object)
 
-    zero_kalan_mask = (d_df["Kalan_Clean"] == 0) & (~zero_ucret_mask)
+    d_df["kalan"] = d_df["Kalan_Clean"].map(fmt_num).astype(object)
+    d_df.loc[zero_ucret_mask, "kalan"] = "Bekleniyor"
     d_df.loc[zero_kalan_mask, "kalan"] = "Ödendi"
 
     cols_to_show = [
@@ -539,9 +556,9 @@ elif menu == "📊 Özet Panel":
 
         ozet_col1, ozet_col2, ozet_col3, ozet_col4, ozet_col5 = st.columns(5)
         ozet_col1.metric("Toplam İş / Araç", f"{total_is}")
-        ozet_col2.metric("Toplam Ciro", f"{total_ciro:,.2f} ₺")
-        ozet_col3.metric("Tahsil Edilen", f"{total_alinan:,.2f} ₺")
-        ozet_col4.metric("Kalan Alacak (Borç)", f"{total_kalan:,.2f} ₺")
+        ozet_col2.metric("Toplam Ciro", fmt_tl(total_ciro))
+        ozet_col3.metric("Tahsil Edilen", fmt_tl(total_alinan))
+        ozet_col4.metric("Kalan Alacak (Borç)", fmt_tl(total_kalan))
         ozet_col5.metric("Ücret Girilmemiş", f"{ucret_bekleyen_adet}")
 
         if ucret_bekleyen_adet > 0:
@@ -816,9 +833,9 @@ elif menu == "🔍 Müşteri & Plaka Geçmişi":
 
                             m_col1, m_col2, m_col3, m_col4 = st.columns(4)
                             m_col1.metric("Toplam İş", f"{t_is}")
-                            m_col2.metric("Toplam Ücret", f"{t_ciro:,.2f} ₺")
-                            m_col3.metric("Ödenen", f"{t_alinan:,.2f} ₺")
-                            m_col4.metric("Kalan Borç", f"{t_kalan:,.2f} ₺")
+                            m_col2.metric("Toplam Ücret", fmt_tl(t_ciro))
+                            m_col3.metric("Ödenen", fmt_tl(t_alinan))
+                            m_col4.metric("Kalan Borç", fmt_tl(t_kalan))
 
                             st.markdown("---")
                             display_df = get_clean_display_df(filtered_cust_df)
@@ -874,9 +891,9 @@ elif menu == "🔍 Müşteri & Plaka Geçmişi":
 
                     p_col1, p_col2, p_col3, p_col4 = st.columns(4)
                     p_col1.metric("Toplam Servis Girişi", f"{p_is}")
-                    p_col2.metric("Toplam İşlem Tutarı", f"{p_ciro:,.2f} ₺")
-                    p_col3.metric("Ödenen", f"{p_alinan:,.2f} ₺")
-                    p_col4.metric("Kalan Borç", f"{p_kalan:,.2f} ₺")
+                    p_col2.metric("Toplam İşlem Tutarı", fmt_tl(p_ciro))
+                    p_col3.metric("Ödenen", fmt_tl(p_alinan))
+                    p_col4.metric("Kalan Borç", fmt_tl(p_kalan))
 
                     st.markdown("---")
                     display_styled_dataframe(plate_df)
@@ -901,14 +918,14 @@ elif menu == "💰 Müşteri Borçları":
         )
 
         if not borc_df.empty:
-            st.metric("Toplam Açık Müşteri Borcu", f"{borc_df['Kalan_Clean'].sum():,.2f} ₺")
+            st.metric("Toplam Açık Müşteri Borcu", fmt_tl(borc_df["Kalan_Clean"].sum()))
 
             formatted_borc = pd.DataFrame(
                 {
                     "Müşteri": borc_df["musteri"],
-                    "Toplam Ücret": borc_df["Ucret_Clean"].map(lambda x: f"{x:,.2f} ₺"),
-                    "Alınan": borc_df["Alinan_Clean"].map(lambda x: f"{x:,.2f} ₺"),
-                    "Kalan Borç": borc_df["Kalan_Clean"].map(lambda x: f"{x:,.2f} ₺"),
+                    "Toplam Ücret": borc_df["Ucret_Clean"].map(fmt_tl),
+                    "Alınan": borc_df["Alinan_Clean"].map(fmt_tl),
+                    "Kalan Borç": borc_df["Kalan_Clean"].map(fmt_tl),
                 }
             )
             st.dataframe(formatted_borc, use_container_width=True, hide_index=True)
@@ -932,7 +949,7 @@ elif menu == "💰 Müşteri Borçları":
 
                 st.info(
                     f"Hedef Kayıt **#{target_id}** | Plaka: `{target_row.get('plaka', '')}` | "
-                    f"Tarih: `{target_row.get('tarih', '')}` | Kalan Borç: `{cur_kalan:,.2f} ₺`"
+                    f"Tarih: `{target_row.get('tarih', '')}` | Kalan Borç: `{fmt_tl(cur_kalan)}`"
                 )
 
                 with st.form("hizli_tahsilat_formu"):
@@ -954,7 +971,7 @@ elif menu == "💰 Müşteri Borçları":
                                     {"alinan": yeni_alinan, "kalan": yeni_kalan}
                                 ).eq("id", target_id).execute()
                                 st.success(
-                                    f"✅ {tahsilat_tutari:,.2f} ₺ tahsilat #{target_id} numaralı kayda işlendi!"
+                                    f"✅ {fmt_tl(tahsilat_tutari)} tahsilat #{target_id} numaralı kayda işlendi!"
                                 )
                                 st.rerun()
                             except Exception as e:
