@@ -430,10 +430,11 @@ menu = st.sidebar.radio(
 )
 
 # ==========================================
-# 1. YENİ İŞ EKLE
+# 1. YENİ İŞ EKLE (UI/UX İYİLEŞTİRİLMİŞ)
 # ==========================================
 if menu == "➕ Yeni İş Ekle":
     st.title("➕ Yeni Araç / İş Ekle")
+    st.caption("Kayıtlı araç/müşteri seçerek hızlıca doldurabilir veya doğrudan yeni kayıt açabilirsiniz.")
 
     defaults = {
         "form_plaka": "",
@@ -483,37 +484,62 @@ if menu == "➕ Yeni İş Ekle":
             st.session_state["form_marka"] = ""
             st.session_state["form_plaka"] = ""
 
-    col_sel, col_clr = st.columns([4, 1])
-    with col_sel:
-        st.selectbox(
-            "🚘 Kayıtlı Araç/Müşteri Seç (Otomatik Doldurur):",
-            select_options,
-            key="secilen_arac_box",
-            on_change=on_select_change,
-        )
-    with col_clr:
-        st.write("")
-        st.write("")
-        if st.button("🧹 Alanları Temizle", use_container_width=True):
-            for k, v in defaults.items():
-                st.session_state[k] = v
-            st.session_state["secilen_arac_box"] = "-- Yeni Kayıt / Manuel Gir --"
-            st.rerun()
+    # Üst Hızlı Seçim ve Temizleme Çubuğu
+    with st.container(border=True):
+        col_sel, col_clr = st.columns([5, 1])
+        with col_sel:
+            st.selectbox(
+                "🚘 Kayıtlı Araç / Müşteri Seç (Otomatik Doldurur)",
+                select_options,
+                key="secilen_arac_box",
+                on_change=on_select_change,
+            )
+        with col_clr:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("🧹 Temizle", use_container_width=True):
+                for k, v in defaults.items():
+                    st.session_state[k] = v
+                st.session_state["secilen_arac_box"] = "-- Yeni Kayıt / Manuel Gir --"
+                st.rerun()
+
+    # Tutar & Kalan Canlı Önizleme (Form Dışı Anlık Hesap)
+    preview_ucret = float(st.session_state.get("form_ucret", 0.0) or 0.0)
+    preview_alinan = float(st.session_state.get("form_alinan", 0.0) or 0.0)
+    preview_kalan = preview_ucret - preview_alinan
+
+    if preview_ucret == 0:
+        durum_ozet = "🔴 Ücret Giriniz (Bekleniyor)"
+    elif preview_kalan <= 0:
+        durum_ozet = "🟢 Ödendi"
+    else:
+        durum_ozet = "🟡 Kısmi Ödeme / Açık Bakiye"
+
+    p_col1, p_col2, p_col3 = st.columns(3)
+    p_col1.metric("Girilen Ücret", fmt_tl(preview_ucret))
+    p_col2.metric("Tahmini Kalan Bakiye", fmt_tl(max(0.0, preview_kalan)))
+    p_col3.metric("Kayıt Durumu", durum_ozet)
 
     with st.form("yeni_is_formu"):
         yeni_col1, yeni_col2 = st.columns(2)
         with yeni_col1:
-            plaka = st.text_input("Plaka", key="form_plaka")
-            musteri = st.text_input("Müşteri Adı / Firma", key="form_musteri")
-            marka = st.text_input("Marka / Model", key="form_marka")
+            st.markdown("**🚛 Araç ve Müşteri Bilgileri**")
+            plaka = st.text_input("Plaka", placeholder="Örn: 16 ABC 123", key="form_plaka")
+            musteri = st.text_input("Müşteri Adı / Firma", placeholder="Örn: Yılmaz Nakliyat", key="form_musteri")
+            marka = st.text_input("Marka / Model", placeholder="Örn: Mercedes Axor 1840", key="form_marka")
             is_tipi = st.selectbox("İş Tipi", ["İşçilik (İ)", "İşçilik+Parça (İS)", "Satış (S)"])
         with yeni_col2:
+            st.markdown("**💰 Tarih, Tutar ve İş Detayı**")
             tarih = st.date_input("İş Tarihi", datetime.now(ZoneInfo("Europe/Istanbul")).date())
             ucret = st.number_input("Toplam Ücret (₺)", key="form_ucret", min_value=0.0, step=100.0)
             alinan = st.number_input("Alınan Ödenen (₺)", key="form_alinan", min_value=0.0, step=100.0)
-            yapilan_islem = st.text_area("Yapılan İşlem / Değişen Parça", key="form_yapilan")
+            yapilan_islem = st.text_area(
+                "Yapılan İşlem / Değişen Parça",
+                placeholder="Yapılan işçilik ve değişen parçaları yazın...",
+                height=105,
+                key="form_yapilan",
+            )
 
-        submit = st.form_submit_button("💾 Kaydet")
+        submit = st.form_submit_button("💾 Kaydet ve Veritabanına Ekle", type="primary", use_container_width=True)
 
         if submit:
             if not musteri.strip() and not plaka.strip():
@@ -533,6 +559,8 @@ if menu == "➕ Yeni İş Ekle":
                 }
                 try:
                     supabase.table("islemler").insert(yeni_kayit).execute()
+                    for k, v in defaults.items():
+                        st.session_state[k] = v
                     st.success("✅ İş başarıyla veritabanına kaydedildi!")
                     st.rerun()
                 except Exception as e:
