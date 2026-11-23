@@ -376,7 +376,6 @@ def get_clean_display_df(input_df: pd.DataFrame, compact: bool = True) -> pd.Dat
     d_df = input_df.copy()
 
     rename_map = {
-        "id": "No",
         "tarih": "Tarih",
         "plaka": "Plaka",
         "musteri": "Müşteri",
@@ -409,7 +408,6 @@ def get_clean_display_df(input_df: pd.DataFrame, compact: bool = True) -> pd.Dat
             .str.strip()
         )
         cols_to_show = [
-            "id",
             "tarih",
             "plaka",
             "musteri",
@@ -420,7 +418,6 @@ def get_clean_display_df(input_df: pd.DataFrame, compact: bool = True) -> pd.Dat
         ]
     else:
         cols_to_show = [
-            "id",
             "tarih",
             "plaka",
             "musteri",
@@ -439,7 +436,6 @@ def get_clean_display_df(input_df: pd.DataFrame, compact: bool = True) -> pd.Dat
 def build_table_column_config(compact: bool = True) -> dict:
     if compact:
         return {
-            "No": st.column_config.TextColumn("No", width="small"),
             "Tarih": st.column_config.TextColumn("Tarih", width="small"),
             "Plaka": st.column_config.TextColumn("Plaka", width="small"),
             "Müşteri": st.column_config.TextColumn("Müşteri", width="medium"),
@@ -449,7 +445,6 @@ def build_table_column_config(compact: bool = True) -> dict:
             "Kalan": st.column_config.TextColumn("Kalan", width="small"),
         }
     return {
-        "No": st.column_config.TextColumn("No", width="small"),
         "Tarih": st.column_config.TextColumn("Tarih", width="small"),
         "Plaka": st.column_config.TextColumn("Plaka", width="small"),
         "Müşteri": st.column_config.TextColumn("Müşteri", width="medium"),
@@ -840,7 +835,7 @@ elif menu == "📋 İş Listesi & Arama":
 
                 st.markdown("---")
                 st.success(
-                    f"📌 **Seçilen Kayıt No:** #{kayit_id} | Plaka: `{row_data.get('plaka', '')}` | Müşteri: `{row_data.get('musteri', '')}`"
+                    f"📌 **Seçilen Kayıt:** Plaka: `{row_data.get('plaka', '')}` | Müşteri: `{row_data.get('musteri', '')}` | Tarih: `{row_data.get('tarih', '')}`"
                 )
 
                 ex_musteri = str(row_data.get("musteri") or "")
@@ -941,7 +936,7 @@ elif menu == "📋 İş Listesi & Arama":
 
                 with tab_sil:
                     st.warning(
-                        f"Seçilen kayıt (#{kayit_id} - {ex_plaka}) veritabanından kalıcı olarak silinecektir."
+                        f"Seçilen kayıt ({ex_plaka} - {ex_musteri}) veritabanından kalıcı olarak silinecektir."
                     )
                     sil_onay = st.checkbox(
                         "Bu kaydı kalıcı olarak silmek istediğimi onaylıyorum.",
@@ -1134,7 +1129,7 @@ elif menu == "💰 Müşteri Borçları":
                 cur_kalan = float(target_row["Kalan_Clean"])
 
                 st.info(
-                    f"Hedef Kayıt **#{target_id}** | Plaka: `{target_row.get('plaka', '')}` | "
+                    f"Hedef Kayıt | Plaka: `{target_row.get('plaka', '')}` | "
                     f"Tarih: `{target_row.get('tarih', '')}` | Kalan Borç: `{fmt_tl(cur_kalan)}`"
                 )
 
@@ -1157,7 +1152,7 @@ elif menu == "💰 Müşteri Borçları":
                                     {"alinan": yeni_alinan, "kalan": yeni_kalan}
                                 ).eq("id", target_id).execute()
                                 st.success(
-                                    f"✅ {fmt_tl(tahsilat_tutari)} tahsilat #{target_id} numaralı kayda işlendi!"
+                                    f"✅ {fmt_tl(tahsilat_tutari)} tahsilat işlendi!"
                                 )
                                 st.rerun()
                             except Exception as e:
