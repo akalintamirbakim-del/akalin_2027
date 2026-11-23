@@ -507,6 +507,7 @@ menu = st.sidebar.radio(
     [
         "➕ Yeni İş Ekle",
         "📊 Özet Panel",
+        "📈 Analiz",
         "📋 İş Listesi & Arama",
         "🔍 Müşteri & Plaka Geçmişi",
         "💰 Müşteri Borçları",
@@ -724,6 +725,75 @@ elif menu == "📊 Özet Panel":
         st.markdown("---")
         st.subheader("Son Eklenen 10 İş")
         display_styled_dataframe(df.tail(10), compact=True)
+
+# ==========================================
+# 2.5 ANALİZ (HAFTALIK / AYLIK / YILLIK)
+# ==========================================
+elif menu == "📈 Analiz":
+    st.title("📈 Haftalık, Aylık ve Yıllık Analiz")
+
+    valid_df = df.dropna(subset=["Tarih_DT"]).copy() if not df.empty else pd.DataFrame()
+    if valid_df.empty:
+        st.info("Analiz için geçerli tarihe sahip kayıt bulunmuyor.")
+    else:
+        periyot = st.radio(
+            "Analiz Periyodu",
+            ["Haftalık", "Aylık", "Yıllık"],
+            horizontal=True,
+            key="analiz_periyot",
+        )
+
+        if periyot == "Haftalık":
+            iso_cal = valid_df["Tarih_DT"].dt.isocalendar()
+            valid_df["Donem_Sort"] = (
+                iso_cal["year"].astype(str) + "-W" + iso_cal["week"].astype(str).str.zfill(2)
+            )
+            valid_df["Donem"] = (
+                iso_cal["year"].astype(str) + " / " + iso_cal["week"].astype(str).str.zfill(2) + ". Hafta"
+            )
+        elif periyot == "Aylık":
+            valid_df["Donem_Sort"] = valid_df["Tarih_DT"].dt.strftime("%Y-%m")
+            valid_df["Donem"] = valid_df["Tarih_DT"].dt.strftime("%Y-%m")
+        else:
+            valid_df["Donem_Sort"] = valid_df["Tarih_DT"].dt.year.astype(str)
+            valid_df["Donem"] = valid_df["Tarih_DT"].dt.year.astype(str)
+
+        grouped = (
+            valid_df.groupby(["Donem_Sort", "Donem"], as_index=False)
+            .agg(
+                Is_Sayisi=("id", "count"),
+                Ciro=("Ucret_Clean", "sum"),
+                Tahsilat=("Alinan_Clean", "sum"),
+                Kalan=("Kalan_Clean", "sum"),
+            )
+            .sort_values("Donem_Sort", ascending=True)
+            .reset_index(drop=True)
+        )
+
+        son_donem = grouped.iloc[-1]
+        a_col1, a_col2, a_col3, a_col4 = st.columns(4)
+        a_col1.metric(f"Son Dönem ({son_donem['Donem']}) İş", f"{int(son_donem['Is_Sayisi'])}")
+        a_col2.metric("Son Dönem Ciro", fmt_tl(son_donem["Ciro"]))
+        a_col3.metric("Son Dönem Tahsilat", fmt_tl(son_donem["Tahsilat"]))
+        a_col4.metric("Son Dönem Kalan", fmt_tl(son_donem["Kalan"]))
+
+        st.markdown("---")
+        st.subheader(f"📊 {periyot} Ciro ve Tahsilat Grafiği")
+        chart_df = grouped.set_index("Donem")[["Ciro", "Tahsilat"]]
+        st.bar_chart(chart_df, height=320)
+
+        st.markdown("---")
+        st.subheader(f"📋 {periyot} Özet Tablosu")
+        tablo_df = pd.DataFrame(
+            {
+                "Dönem": grouped["Donem"],
+                "İş Adedi": grouped["Is_Sayisi"].astype(str),
+                "Toplam Ciro": grouped["Ciro"].map(fmt_tl),
+                "Tahsil Edilen": grouped["Tahsilat"].map(fmt_tl),
+                "Kalan Alacak": grouped["Kalan"].map(fmt_tl),
+            }
+        ).iloc[::-1]
+        st.dataframe(tablo_df, use_container_width=True, hide_index=True)
 
 # ==========================================
 # 3. İŞ LİSTESİ, ARAMA & YAZDIRILABİLİR FİŞ
