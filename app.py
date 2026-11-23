@@ -13,6 +13,23 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- TABLO EKRANA SIĞDIRMA / KOMPAKT STİL ---
+st.markdown(
+    """
+    <style>
+        div[data-testid="stDataFrame"] th,
+        div[data-testid="stDataFrame"] td {
+            padding-top: 6px !important;
+            padding-bottom: 6px !important;
+            padding-left: 8px !important;
+            padding-right: 8px !important;
+            font-size: 13px !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 # --- KULLANICI ADI & ŞİFRE KONTROLÜ ---
 def check_password() -> bool:
@@ -353,18 +370,18 @@ def render_printable_receipt(row_data: pd.Series) -> None:
 
 
 # --- TABLO GÖRÜNÜMÜ VE RENKLENDİRME ---
-def get_clean_display_df(input_df: pd.DataFrame) -> pd.DataFrame:
+def get_clean_display_df(input_df: pd.DataFrame, compact: bool = True) -> pd.DataFrame:
     if input_df.empty:
         return input_df
     d_df = input_df.copy()
 
     rename_map = {
-        "id": "Kayıt No",
+        "id": "No",
         "tarih": "Tarih",
         "plaka": "Plaka",
         "musteri": "Müşteri",
-        "marka": "Marka / Model",
-        "is_tipi": "İş Tipi",
+        "marka": "Marka",
+        "is_tipi": "Tip",
         "yapilan_islem": "Yapılan İşlem",
         "ucret": "Ücret",
         "alinan": "Alınan",
@@ -383,24 +400,75 @@ def get_clean_display_df(input_df: pd.DataFrame) -> pd.DataFrame:
     d_df.loc[zero_ucret_mask, "kalan"] = "Bekleniyor"
     d_df.loc[zero_kalan_mask, "kalan"] = "Ödendi"
 
-    cols_to_show = [
-        "id",
-        "tarih",
-        "plaka",
-        "musteri",
-        "marka",
-        "is_tipi",
-        "yapilan_islem",
-        "ucret",
-        "alinan",
-        "kalan",
-    ]
+    if compact:
+        d_df["yapilan_islem"] = (
+            d_df["yapilan_islem"]
+            .fillna("")
+            .astype(str)
+            .str.replace("\n", " ", regex=False)
+            .str.strip()
+        )
+        cols_to_show = [
+            "id",
+            "tarih",
+            "plaka",
+            "musteri",
+            "yapilan_islem",
+            "ucret",
+            "alinan",
+            "kalan",
+        ]
+    else:
+        cols_to_show = [
+            "id",
+            "tarih",
+            "plaka",
+            "musteri",
+            "marka",
+            "is_tipi",
+            "yapilan_islem",
+            "ucret",
+            "alinan",
+            "kalan",
+        ]
+
     existing_cols = [c for c in cols_to_show if c in d_df.columns]
     return d_df[existing_cols].rename(columns=rename_map)
 
 
-def display_styled_dataframe(input_df: pd.DataFrame, selectable: bool = False, key: str | None = None):
-    display_df = get_clean_display_df(input_df)
+def build_table_column_config(compact: bool = True) -> dict:
+    if compact:
+        return {
+            "No": st.column_config.TextColumn("No", width="small"),
+            "Tarih": st.column_config.TextColumn("Tarih", width="small"),
+            "Plaka": st.column_config.TextColumn("Plaka", width="small"),
+            "Müşteri": st.column_config.TextColumn("Müşteri", width="medium"),
+            "Yapılan İşlem": st.column_config.TextColumn("Yapılan İşlem", width="large"),
+            "Ücret": st.column_config.TextColumn("Ücret", width="small"),
+            "Alınan": st.column_config.TextColumn("Alınan", width="small"),
+            "Kalan": st.column_config.TextColumn("Kalan", width="small"),
+        }
+    return {
+        "No": st.column_config.TextColumn("No", width="small"),
+        "Tarih": st.column_config.TextColumn("Tarih", width="small"),
+        "Plaka": st.column_config.TextColumn("Plaka", width="small"),
+        "Müşteri": st.column_config.TextColumn("Müşteri", width="medium"),
+        "Marka": st.column_config.TextColumn("Marka", width="small"),
+        "Tip": st.column_config.TextColumn("Tip", width="small"),
+        "Yapılan İşlem": st.column_config.TextColumn("Yapılan İşlem", width="large"),
+        "Ücret": st.column_config.TextColumn("Ücret", width="small"),
+        "Alınan": st.column_config.TextColumn("Alınan", width="small"),
+        "Kalan": st.column_config.TextColumn("Kalan", width="small"),
+    }
+
+
+def display_styled_dataframe(
+    input_df: pd.DataFrame,
+    selectable: bool = False,
+    key: str | None = None,
+    compact: bool = True,
+):
+    display_df = get_clean_display_df(input_df, compact=compact)
 
     def color_status(val):
         if val == "Ücret Giriniz":
@@ -416,17 +484,25 @@ def display_styled_dataframe(input_df: pd.DataFrame, selectable: bool = False, k
     except AttributeError:
         styled = display_df.style.applymap(color_status)
 
+    col_cfg = build_table_column_config(compact=compact)
+
     if selectable:
         st.dataframe(
             styled,
             use_container_width=True,
             hide_index=True,
+            column_config=col_cfg,
             selection_mode="single-row",
             on_select="rerun",
             key=key,
         )
     else:
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=True,
+            column_config=col_cfg,
+        )
 
 
 # --- MENÜ ---
@@ -625,7 +701,7 @@ elif menu == "📊 Özet Panel":
                 f"⚠️ **Dikkat:** Ücreti henüz girilmemiş **{ucret_bekleyen_adet}** açık iş kaydı bulunuyor."
             )
             with st.expander(f"🔴 Ücret Girilmesi Beklenen Kayıtları Gör ({ucret_bekleyen_adet})"):
-                display_styled_dataframe(ucret_bekleyen_df)
+                display_styled_dataframe(ucret_bekleyen_df, compact=True)
 
         st.markdown("---")
         st.subheader("💾 Manuel Yedekleme")
@@ -652,7 +728,7 @@ elif menu == "📊 Özet Panel":
 
         st.markdown("---")
         st.subheader("Son Eklenen 10 İş")
-        display_styled_dataframe(df.tail(10))
+        display_styled_dataframe(df.tail(10), compact=True)
 
 # ==========================================
 # 3. İŞ LİSTESİ, ARAMA & YAZDIRILABİLİR FİŞ
@@ -730,17 +806,22 @@ elif menu == "📋 İş Listesi & Arama":
             drop=True
         )
 
-        s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+        s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns([1.2, 1.4, 1.4, 1.4, 1.6])
         s_col1.metric("Filtrelenen İş", f"{len(filtered_df)}")
         s_col2.metric("Toplam Ücret", fmt_tl(filtered_df["Ucret_Clean"].sum()))
         s_col3.metric("Alınan Toplam", fmt_tl(filtered_df["Alinan_Clean"].sum()))
         s_col4.metric("Kalan Bakiye", fmt_tl(filtered_df["Kalan_Clean"].sum()))
+        with s_col5:
+            st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
+            compact_mode = st.toggle("📐 Ekrana Sığdır (Kompakt)", value=True, key="list_compact_toggle")
 
         st.info(
             "💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir, silebilir veya yazdırılabilir fiş alabilirsiniz."
         )
 
-        display_styled_dataframe(filtered_df, selectable=True, key="is_listesi_tablosu")
+        display_styled_dataframe(
+            filtered_df, selectable=True, key="is_listesi_tablosu", compact=compact_mode
+        )
 
         selected_rows = []
         selection_state = st.session_state.get("is_listesi_tablosu")
@@ -943,7 +1024,7 @@ elif menu == "🔍 Müşteri & Plaka Geçmişi":
                             m_col4.metric("Kalan Borç", fmt_tl(t_kalan))
 
                             st.markdown("---")
-                            display_df = get_clean_display_df(filtered_cust_df)
+                            display_df = get_clean_display_df(filtered_cust_df, compact=True)
 
                             output = io.BytesIO()
                             with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -957,7 +1038,7 @@ elif menu == "🔍 Müşteri & Plaka Geçmişi":
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             )
 
-                            display_styled_dataframe(filtered_cust_df)
+                            display_styled_dataframe(filtered_cust_df, compact=True)
                         else:
                             st.warning("Seçilen tarih aralığında bu müşteriye ait kayıt bulunamadı.")
 
@@ -1001,7 +1082,7 @@ elif menu == "🔍 Müşteri & Plaka Geçmişi":
                     p_col4.metric("Kalan Borç", fmt_tl(p_kalan))
 
                     st.markdown("---")
-                    display_styled_dataframe(plate_df)
+                    display_styled_dataframe(plate_df, compact=True)
 
 # ==========================================
 # 5. MÜŞTERİ BORÇLARI & HIZLI TAHSİLAT
