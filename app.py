@@ -660,7 +660,11 @@ elif menu == "📊 Özet Panel":
 elif menu == "📋 İş Listesi & Arama":
     st.title("📋 İş Geçmişi ve Arama")
 
-    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
+    if st.session_state.pop("reset_list_filters", False):
+        st.session_state["list_year"] = "Tümü"
+        st.session_state["list_month"] = "Tümü"
+        st.session_state["list_status"] = "Tümü"
+        st.session_state["list_search"] = ""
 
     years = ["Tümü"]
     if not df.empty and "Tarih_DT" in df.columns:
@@ -684,14 +688,21 @@ elif menu == "📋 İş Listesi & Arama":
     }
     status_options = ["Tümü", "Ücret Giriniz", "Bekleniyor", "Ödendi"]
 
+    f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns([1.2, 1.2, 1.4, 2.2, 1.0])
     with f_col1:
-        selected_year = st.selectbox("📅 Yıl Seçin", years)
+        selected_year = st.selectbox("📅 Yıl Seçin", years, key="list_year")
     with f_col2:
-        selected_month_name = st.selectbox("🗓️ Ay Seçin", list(months.keys()))
+        selected_month_name = st.selectbox("🗓️ Ay Seçin", list(months.keys()), key="list_month")
     with f_col3:
-        selected_status = st.selectbox("🏷️ Ödeme Durumu", status_options)
+        selected_status = st.selectbox("🏷️ Ödeme Durumu", status_options, key="list_status")
     with f_col4:
-        search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", "").strip()
+        search_term = st.text_input("🔍 Müşteri, Plaka veya İşlem Ara:", key="list_search").strip()
+    with f_col5:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Sıfırla", use_container_width=True):
+            st.session_state["reset_list_filters"] = True
+            st.session_state.pop("is_listesi_tablosu", None)
+            st.rerun()
 
     filtered_df = df.copy()
     if not filtered_df.empty and "Tarih_DT" in filtered_df.columns:
@@ -718,7 +729,13 @@ elif menu == "📋 İş Listesi & Arama":
         filtered_df = filtered_df.sort_values(by=["Tarih_DT", "id"], ascending=[True, True]).reset_index(
             drop=True
         )
-        st.caption(f"Gösterilen kayıt sayısı: **{len(filtered_df)}**")
+
+        s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+        s_col1.metric("Filtrelenen İş", f"{len(filtered_df)}")
+        s_col2.metric("Toplam Ücret", fmt_tl(filtered_df["Ucret_Clean"].sum()))
+        s_col3.metric("Alınan Toplam", fmt_tl(filtered_df["Alinan_Clean"].sum()))
+        s_col4.metric("Kalan Bakiye", fmt_tl(filtered_df["Kalan_Clean"].sum()))
+
         st.info(
             "💡 **İpucu:** Tablodaki bir satıra tıklayarak seçebilir, hemen aşağıdaki alandan düzenleyebilir, silebilir veya yazdırılabilir fiş alabilirsiniz."
         )
@@ -771,6 +788,29 @@ elif menu == "📋 İş Listesi & Arama":
                 )
 
                 with tab_duzenle:
+                    u_key = f"edit_ucret_{kayit_id}"
+                    a_key = f"edit_alinan_{kayit_id}"
+                    if u_key not in st.session_state:
+                        st.session_state[u_key] = ex_ucret
+                    if a_key not in st.session_state:
+                        st.session_state[a_key] = ex_alinan
+
+                    q_col1, q_col2, q_col3 = st.columns([1.2, 1.2, 2.6])
+                    with q_col1:
+                        if st.button("✅ Tamamı Ödendi", key=f"q_paid_{kayit_id}", use_container_width=True):
+                            st.session_state[a_key] = float(st.session_state.get(u_key, ex_ucret) or 0.0)
+                            st.rerun()
+                    with q_col2:
+                        if st.button("↩️ Alınan Sıfırla", key=f"q_zero_{kayit_id}", use_container_width=True):
+                            st.session_state[a_key] = 0.0
+                            st.rerun()
+                    with q_col3:
+                        cur_edit_u = float(st.session_state.get(u_key, 0.0) or 0.0)
+                        cur_edit_a = float(st.session_state.get(a_key, 0.0) or 0.0)
+                        st.caption(
+                            f"Güncel Kalan Bakiye: **{fmt_tl(max(0.0, cur_edit_u - cur_edit_a))}**"
+                        )
+
                     with st.form(f"tiklanan_duzenleme_formu_{kayit_id}"):
                         d_kol1, d_kol2 = st.columns(2)
                         with d_kol1:
@@ -781,10 +821,10 @@ elif menu == "📋 İş Listesi & Arama":
                         with d_kol2:
                             d_tarih = st.date_input("İş Tarihi", value=ex_tarih)
                             d_ucret = st.number_input(
-                                "Toplam Ücret (₺)", value=ex_ucret, min_value=0.0, step=100.0
+                                "Toplam Ücret (₺)", key=u_key, min_value=0.0, step=100.0
                             )
                             d_alinan = st.number_input(
-                                "Alınan Ödenen (₺)", value=ex_alinan, min_value=0.0, step=100.0
+                                "Alınan Ödenen (₺)", key=a_key, min_value=0.0, step=100.0
                             )
                             d_yapilan_islem = st.text_area(
                                 "Yapılan İşlem / Değişen Parça", value=ex_islem
@@ -808,6 +848,8 @@ elif menu == "📋 İş Listesi & Arama":
                             try:
                                 supabase.table("islemler").update(guncel_veri).eq("id", kayit_id).execute()
                                 st.session_state.pop("is_listesi_tablosu", None)
+                                st.session_state.pop(u_key, None)
+                                st.session_state.pop(a_key, None)
                                 st.success("✅ Kayıt anında güncellendi!")
                                 st.rerun()
                             except Exception as e:
@@ -820,7 +862,11 @@ elif menu == "📋 İş Listesi & Arama":
                     st.warning(
                         f"Seçilen kayıt (#{kayit_id} - {ex_plaka}) veritabanından kalıcı olarak silinecektir."
                     )
-                    if st.button("🚨 Seçilen Kaydı Kalıcı Olarak Sil", type="primary"):
+                    sil_onay = st.checkbox(
+                        "Bu kaydı kalıcı olarak silmek istediğimi onaylıyorum.",
+                        key=f"del_confirm_{kayit_id}",
+                    )
+                    if st.button("🚨 Seçilen Kaydı Kalıcı Olarak Sil", type="primary", disabled=not sil_onay):
                         try:
                             supabase.table("islemler").delete().eq("id", kayit_id).execute()
                             st.session_state.pop("is_listesi_tablosu", None)
